@@ -1,0 +1,208 @@
+# rag4vln 统一配置：basic（说明） / retrieval（嵌入、caption、检索系数） / augment（指令增强 LLM）
+# API Key 建议使用环境变量名填入 *api_key_env*，勿将密钥提交仓库（阿里云 DashScope：通常为 DASHSCOPE_API_KEY）。
+
+basic:
+  description: |
+    统一入口配置。检索与 caption 见 retrieval；多种增强器见 augment（llm / template_llm / semantic_pathplanning）。
+  # 可在此扩展：版本号、实验标签等元数据。
+
+retrieval:
+  # 文本后端：bert=Transformers 均值池化；sentence_bert / sbert；bge=BGE（经 sentence-transformers 加载）
+  # 文本与视觉嵌入统一维度 D（须与所选文本 checkpoint + ViT 一致；下列默认组合均为 768）
+  text_embedder: bge
+
+  embedding_dim: 768
+
+  # 检索混合系数（用于 `Retriever.score_all`）：
+  # - alpha：文本/图像的权重（用于场景匹配 & 起始视角匹配）
+  # - beta ：位置/视角的权重（用于起始与终点视角匹配）
+  alpha: 0.4
+  beta: 0.4
+
+  # 主路径 `src/retrieval/retriever.py` 与 `retrieval_backup1`：是否对参与混合的视觉/语义余弦做归一化（distance 不归一化）
+  # 主路径若 YAML 中不写此项，则默认关闭（与历史行为一致）。方式由 score_norm_mode 指定。
+  normalize_visual_semantic_scores: false
+  score_norm_mode: minmax   # none | minmax | zscore
+  score_norm_eps: 1.0e-6
+
+  # 消融：为 true 时起点/终点「视角匹配」项不乘 scene_belonging_score（start_zone 仍乘场景分）
+  no_scene_gate_on_view_scores: false
+
+  # BGE：仅对用户指令做嵌入时加此前缀（与 BAAI 检索 query 推荐一致）；caption 不加。设 "" 关闭
+  bge_query_prefix: "Represent this sentence for searching relevant passages: "
+
+  bert:
+    pretrained: "bert-base-uncased"
+
+  sentence_bert:
+    pretrained: "sentence-transformers/all-mpnet-base-v2"
+
+  bge:
+    pretrained: "BAAI/bge-base-en-v1.5"
+
+  vit:
+    pretrained: "google/vit-base-patch16-224"
+
+  caption:
+    enabled: true
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    api_key_env: DASHSCOPE_API_KEY
+    model: "qwen-vl-plus"
+    timeout_sec: 120
+    max_tokens: 512
+    temperature: 0.2
+
+    vision:
+      enabled: true
+      image_max_side: 768
+      jpeg_quality: 85
+
+    system_prompt: |
+      You are a household assistant robot. Your current task is to observe the environment and document the layout of rooms, the objects within them, and their functions for users.
+    user_prompt: |
+      Please describe in detail the objects and their spatial relationships in the given image (e.g., "The picture appears to be a part of a kitchen. A round table is located in the center, a refrigerator is to the right of the table, and a small square table is to the left of the round table"). Please pay special attention to identifying areas that robots can pass through, such as doors, stairs, and hallways, and describe their locations. For the black missing areas in the image, you can simply ignore them. Please include as many objects as possible, and please strictly follow the format below and don't output anything other than such a correct Python dictionary, and do not use Python code blocks in Markdown:
+      ["The picture appears to be a part of a kitchen. A wooden dining table is located in the center, a refrigerator is to the right of the table, and another small table is to the left."]
+
+    user_prompt_no_image_suffix: |
+      (Image was not attached; give a short generic indoor scene description.)
+
+    on_error: "raise"
+
+augment:
+  # Type 1: 单次 LLM 直接扩写指令
+  llm:
+    enabled: true
+    api_key_env: DASHSCOPE_API_KEY
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen-plus
+    timeout_sec: 120
+    max_tokens: 768
+    temperature: 0.3
+
+    on_error: raise
+
+    system_prompt: |
+      You are an *Instruction Enhancement Assistant* for indoor robot navigation.
+
+      You will be given:
+      1) The user's initial intent (often incomplete).
+      2) Structured retrieval evidence (scene/zone/view IDs, confidence scores, the selected start/end, and a view-path).
+      3) Human-readable region descriptions along the selected path (derived from KB).
+
+      Your task is to output ONE simple, direct navigation instruction that a robot can execute.
+
+      Output rules:
+      - English only.
+      - One sentence, imperative style.
+      - No JSON, no bullet points, no markdown code blocks.
+      - Use only information supported by the evidence/region descriptions. Do not invent IDs or extra steps.
+      - If region descriptions contain place names, keep them.
+
+      Example output:
+      "Leave the living room, go through the door, enter the bedroom, and stop at the bedside."
+
+    user_prompt_template: |
+      Initial intent:
+      {instruction}
+
+      Robot observation (optional):
+      {robot_caption}
+
+      Retrieval evidence (JSON):
+      {evidence_json}
+
+      Region descriptions along the selected path:
+      {path_region_descriptions}
+
+      Output the final navigation instruction (one sentence).
+
+  # Type 2: LLM 填槽 + 本地 instruction_template 拼接
+  template_llm:
+    enabled: true
+    api_key_env: DASHSCOPE_API_KEY
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen-plus
+    timeout_sec: 120
+    max_tokens: 256
+    temperature: 0.2
+
+    system_prompt: |
+      You summarize navigation evidence into template slots.
+      Always return strict JSON with keys:
+      - start_region_summary
+      - path_region_summaries
+      - goal_target_summary
+      Keep each value concise and grounded in the given evidence.
+
+    instruction_template: |
+      You are currently in {start_region_summary}. You should pass through {path_steps_summary}, and finally reach {goal_target_summary}.
+
+    user_prompt_template: |
+      Summarize slots for this template:
+      You are currently in {{start_region_summary}}. You should pass through {{path_steps_summary}}, and finally reach {{goal_target_summary}}.
+
+      Instruction: {instruction}
+      Robot caption: {robot_caption}
+      start_zone_id: {start_zone_id}
+      start_view_id: {start_view_id}
+      intermediate_path_regions: {intermediate_path_regions_json}
+      end_zone_id: {end_zone_id}
+      end_view_id: {end_view_id}
+      pair_scores: {pair_scores_json}
+
+      Rules:
+      1) Output strict JSON only.
+      2) start_region_summary: concise area phrase (where the robot currently is).
+      3) path_region_summaries: a list of short phrases; length must equal intermediate_path_regions length.
+      4) goal_target_summary: specific target inside destination area (e.g., 'next to the TV', 'by the sofa').
+      5) Keep grounded to given evidence; no hallucination.
+
+  # Type 3: 语义路径规划 — 单次 LLM，三阶段 CoT；未单独配置的 API 字段从 llm 段合并。
+  semantic_pathplanning:
+    enabled: true
+    max_tokens: 2048
+    temperature: 0.3
+    on_error: raise
+
+    system_prompt: |
+      You are a navigation instruction planner for indoor vision-and-language navigation (VLN).
+
+      In ONE assistant reply, perform three sequential stages. Each stage MUST begin with a short chain-of-thought in its own tag, then the stage output. Use English for all visible outputs (task narrative, JSON, final instruction).
+
+      --- Stage 1: Evidence → task narrative ---
+      Put reasoning in <cot_evidence></cot_evidence>.
+      Put the result only in <task_narrative></task_narrative>: a coherent paragraph from the robot's starting viewpoint to the goal viewpoint (what it passes through, which areas/connectors like doorways or hallways matter). Ground only in the given evidence and region descriptions; do not invent unsupported place names.
+
+      --- Stage 2: Task narrative → semantic waypoints ---
+      Put reasoning in <cot_waypoints></cot_waypoints>.
+      Then put a single JSON object inside <waypoints_json></waypoints_json> (raw JSON or inside a markdown ```json block). Schema:
+      {"waypoints":[{"kind":"...","semantic":"...","note":"optional"}]}
+      kind must be one of: leave, search, reach, goal.
+      - leave: exit current area; semantic = connector or brief cue (e.g. doorway).
+      - search: only if the user must find something; semantic = what to look for.
+      - reach: intermediate area or landmark; semantic = short phrase.
+      - goal: final stop; semantic = target near destination.
+      There must be exactly one waypoint with kind "goal", and it must be the last element. Prefer a minimal ordered list.
+
+      --- Stage 3: Waypoints as FSM → VLN-style actions ---
+      Put reasoning in <cot_fsm></cot_fsm>: treat waypoints as states/transitions (e.g. find connector, traverse, enter region, approach goal).
+      Put the ONLY deliverable navigation command for the robot in <final_instruction></final_instruction>:
+      English, imperative, 1–3 short sentences, VLN-style actions (e.g. find the door, go through the door to leave the living room, move to the bedside). No XML tags inside final_instruction. No JSON there.
+
+    user_prompt_template: |
+      User intent:
+      {instruction}
+
+      Robot observation (optional):
+      {robot_caption}
+
+      Retrieval evidence (JSON, robot_caption omitted):
+      {evidence_json}
+
+      Human-readable region descriptions along the retrieved path (ordered):
+      {path_region_descriptions_json}
+
+      Zone IDs along the path (ordered, if any):
+      {path_zone_ids_json}
+
+      Produce the three stages and end with <final_instruction>.

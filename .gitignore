@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+.Python
+.venv/
+venv/
+env/
+
+# Run outputs & caches
+results/
+*.pt
+.cache/
+
+# data/: ignore bulk files; keep directory tree via .gitkeep / README (see data/README.md)
+data/**/*
+!data/**/
+!data/.gitkeep
+!data/**/.gitkeep
+!data/README.md
+!data/**/README.md
+
+# Secrets & local overrides
+.env
+.env.*
+src/config.local.yaml
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
