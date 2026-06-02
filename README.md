@@ -2,7 +2,6 @@
 
 **Languages:** **English** · [简体中文](README.zh-CN.md)
 
-> Edit [README.zh-CN.md](README.zh-CN.md) first, then sync this file.
 
 A **RAG plugin** for VLN: retrieve evidence from a memory KB using user intent and the starting observation, augment navigation instructions, then run Habitat evaluation with InternNav, StreamVLN, or other downstream frameworks. Core logic is **decoupled** from any specific VLN model.
 
