@@ -2,7 +2,6 @@
 
 **Languages:** [English](README.md) · **简体中文**
 
-> 以本文件为主修改，定稿后同步 [README.md](README.md)。
 
 面向 VLN 的 **RAG 插件**：根据用户意图与起始观测，从记忆库检索证据并增强导航指令，再交给 InternNav、StreamVLN 等下游做 Habitat 评测。核心逻辑与具体 VLN 模型**解耦**。
 
