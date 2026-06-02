@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Habitat-Sim：在 MP3D glb 场景中按 agent 位姿采集 RGB（与 KB 解耦，可复用）。
+Habitat-Sim: capture RGB in MP3D glb scenes at agent poses (decoupled from KB, reusable).
 """
 
 from pathlib import Path
@@ -19,8 +19,8 @@ def make_mp3d_sim(
     far: float = 1000.0,
 ):
     """
-    加载 glb，创建带 RGB 相机的 Simulator。
-    使用完毕请 ``sim.close()`` 或配合 try/finally。
+    Load glb and create a Simulator with an RGB camera.
+    Call ``sim.close()`` when done, or use try/finally.
     """
     import habitat_sim
     from habitat_sim import SimulatorConfiguration
@@ -49,7 +49,7 @@ def render_rgb_at_pose(
     quat_xyzw: np.ndarray,
 ) -> np.ndarray:
     """
-    将 agent 置于 position + 四元数 (x,y,z,w)，返回 RGB uint8，形状 (H,W,3)。
+    Place agent at position + quaternion (x,y,z,w); return RGB uint8 with shape (H,W,3).
     """
     import habitat_sim
     from habitat_sim.utils.common import quat_from_coeffs

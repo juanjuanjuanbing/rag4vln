@@ -5,7 +5,7 @@ Retriever-only evaluation for "Ours".
 
 Metrics:
 - Scene: Hit@1, Hit@K
-- View(start/end): Hit@1, Hit@K, MRR（1/名次；GT 不在返回的 ``topk3_pairs`` 列表内为 0；列表长度由 ``--topk3`` 决定）
+- View(start/end): Hit@1, Hit@K, MRR (1/rank; 0 if GT not in returned ``topk3_pairs``; list length from ``--topk3``)
 
 Each run writes under ``<result_dir>/<subset>_<timestamp>/``:
 ``ins_start_view/``, ``retriever_start_view/``, ``retriever_end_view/`` (see README).
@@ -159,7 +159,7 @@ def _build_vision_embedder(kind: str, config_path: Path, *, binary_dim: int) -> 
 
 
 def _build_gt_map(gt_csv: Path) -> Dict[str, Dict[str, str]]:
-    """按 episode_id 对齐 GT；同一 id 在 CSV 中多次出现时只保留首次出现行。"""
+    """Align GT by episode_id; if duplicate ids in CSV, keep only the first row."""
     out: Dict[str, Dict[str, str]] = {}
     with gt_csv.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
@@ -184,8 +184,8 @@ def _resolve_start_view_png(
     dataset_file: Path,
 ) -> Path:
     """
-    起点图与 ``raw_data`` / ``raw_data_mask_*`` / ``raw_data_implicit`` 共用一套文件：
-    ``data/vln_ce/start_view/r2r/<split>/ep_<id>.png``（自 ``r2r`` 起的短路径，不含 raw_data* 前缀）。
+    Start images shared across ``raw_data`` / ``raw_data_mask_*`` / ``raw_data_implicit``:
+    ``data/vln_ce/start_view/r2r/<split>/ep_<id>.png`` (short path from ``r2r``, no raw_data* prefix).
     """
     vln_ce_root = (repo_root / "data" / "vln_ce").resolve()
     ds_parent = dataset_file.expanduser().resolve().parent
@@ -193,13 +193,13 @@ def _resolve_start_view_png(
         rel_parts = ds_parent.relative_to(vln_ce_root).parts
     except ValueError as e:
         raise SystemExit(
-            f"start_view 路径要求 dataset JSON 位于 data/vln_ce 下: {dataset_file}"
+            f"start_view path requires dataset JSON under data/vln_ce: {dataset_file}"
         ) from e
     try:
         i = rel_parts.index("r2r")
     except ValueError as e:
         raise SystemExit(
-            f"start_view 共用路径要求在 vln_ce 相对目录中包含 r2r 段: {dataset_file}"
+            f"start_view shared path requires an r2r segment in the path relative to vln_ce: {dataset_file}"
         ) from e
     sub = Path(*rel_parts[i:])
     return (start_view_root / sub / f"ep_{ep_id}.png").resolve()
@@ -245,13 +245,13 @@ def main() -> None:
         "--topk3",
         type=int,
         default=10,
-        help="(start,end) 对列表长度及每场景 start/end 候选深度（传给 Retriever.topk3_pairs；默认 10，与旧版单独传 pair_ranking_topk=10 时相当）",
+        help="(start,end) pair list length and per-scene start/end candidate depth (Retriever.topk3_pairs; default 10)",
     )
     parser.add_argument(
         "--hit-k",
         type=int,
         default=5,
-        help="评测命中率阈值 K（默认 5，对应 Hit@5）",
+        help="Hit-rate threshold K for metrics (default 5 → Hit@5)",
     )
     parser.add_argument("--max-episodes", type=int, default=0, help="<=0 means all")
     parser.add_argument(
@@ -462,7 +462,7 @@ def main() -> None:
         pred_scene = str(best_pair.get("scene_id") or "").strip()
         pred_end_view = str(best_pair.get("end_view_id") or "").strip()
 
-        # 终点匹配分：GT end-view vs 预测 end-view，仅使用语义与视觉相似度
+        # End match score: GT end-view vs predicted end-view; semantic + visual similarity only
         # score = alpha*semantic + (1-alpha)*visual
         gt_pos = _view_position(kb, scene_gt, end_gt) if scene_gt and end_gt else None
         pred_pos = _view_position(kb, pred_scene, pred_end_view) if pred_scene and pred_end_view else None

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""图像输入统一转为 PIL RGB。"""
+"""Convert image inputs to PIL RGB."""
 
 from __future__ import annotations
 

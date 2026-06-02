@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""指令增强：结果类型与检索证据规范化。"""
+"""Instruction augmentation: result types and retrieval evidence normalization."""
 
 from __future__ import annotations
 
@@ -11,18 +11,18 @@ from typing import Any, Dict, Mapping, Optional
 
 @dataclass
 class AugmentationResult:
-    """增强后的指令及元信息。"""
+    """Augmented instruction and metadata."""
 
     instruction: str
-    """扩写后的、宜于导航执行的自然语言指令。"""
+    """Expanded natural-language instruction suitable for navigation."""
     raw_model_output: Optional[str] = None
-    """模型原始输出（若有）。"""
+    """Raw model output when available."""
     meta: Dict[str, Any] = field(default_factory=dict)
 
 
 def normalize_robot_caption(text: Optional[str]) -> str:
     """
-    将 `robot_caption` 规整为纯文本（兼容部分 VLM 把整段描述塞进 JSON 或异常结构的情况）。
+    Normalize `robot_caption` to plain text (handles VLMs that wrap descriptions in JSON or odd structures).
     """
     if text is None:
         return ""
@@ -41,7 +41,7 @@ def normalize_robot_caption(text: Optional[str]) -> str:
             return obj.strip()
     except (json.JSONDecodeError, TypeError, ValueError):
         pass
-    # 形如 "{\"...\"}" 的双层引号
+    # Double-quoted form like "{\"...\"}"
     if s.startswith('"') and s.endswith('"') and len(s) >= 2:
         inner = s[1:-1].replace('\\"', '"').strip()
         if inner:
@@ -51,13 +51,13 @@ def normalize_robot_caption(text: Optional[str]) -> str:
 
 def retrieval_evidence_from_plan(plan: Mapping[str, Any]) -> Dict[str, Any]:
     """
-    从 ``Retriever.retrieve`` 的返回 dict 中抽取用于增强的结构化证据（去掉 timing 等）。
+    Extract structured evidence from ``Retriever.retrieve`` for augmentation (drops timing, etc.).
 
-    保留字段：
+    Kept fields:
     - ``robot_caption``
-    - ``topk1_scenes``：场景 id 与 ``scene_belonging_score``
-    - ``topk2_zones``：起始区域候选与 ``start_zone_belonging_score``
-    - ``topk3_pairs``：起终点 view、``scores``、``path`` 等
+    - ``topk1_scenes``: scene ids and ``scene_belonging_score``
+    - ``topk2_zones``: start-zone candidates and ``start_zone_belonging_score``
+    - ``topk3_pairs``: start/end views, ``scores``, ``path``, etc.
     """
     keys = (
         "robot_caption",
@@ -73,13 +73,13 @@ def retrieval_evidence_from_plan(plan: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def evidence_to_pretty_json(evidence: Mapping[str, Any]) -> str:
-    """供 prompt 使用的 JSON 字符串（排除 robot_caption，单独展示）。"""
+    """JSON string for prompts (excludes robot_caption, shown separately)."""
     payload = {k: v for k, v in evidence.items() if k != "robot_caption"}
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
 
 
 def strip_code_fence(text: str) -> str:
-    """若模型用 markdown 代码块包裹输出，去掉围栏。"""
+    """Strip markdown code fences if the model wrapped its output."""
     s = text.strip()
     m = re.match(r"^```(?:\w+)?\s*\n?(.*)\n?```\s*$", s, re.DOTALL)
     if m:

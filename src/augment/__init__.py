@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-不完全指令增强：检索证据 + 简短意图 → 可执行导航指令。
+Incomplete instruction augmentation: retrieval evidence + short intent → executable navigation instruction.
 
-- ``InstructionAugmenter``：基类。
-- ``LLMDirectInstructionAugmenter``：第一种实现，单次大模型生成。
-- ``TemplatePathInstructionAugmenter``：第二种，LLM 填槽 + 本地模板拼接。
-- ``SemanticPathPlanningAugmenter``：第三种，语义路径规划（三阶段 CoT + 最终 VLN 指令）。
-- ``ROnlyInstructionAugmenter``：R_only baseline，仅拼接检索证据与原始指令（无 LLM）。
+- ``InstructionAugmenter``: base class.
+- ``LLMDirectInstructionAugmenter``: type 1, single LLM generation.
+- ``TemplatePathInstructionAugmenter``: type 2, LLM slot filling + local template.
+- ``SemanticPathPlanningAugmenter``: type 3, semantic path planning (three-stage CoT + final VLN instruction).
+- ``ROnlyInstructionAugmenter``: R_only baseline, concatenates evidence and original instruction (no LLM).
 """
 
 from .instruction_augmenter import InstructionAugmenter

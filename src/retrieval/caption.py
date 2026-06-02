@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-机器人观测图 → 多模态大模型 caption（配置见统一 `src/config.yaml` 的 `retrieval.caption` 段）。
-由 `Retriever.retrieve` 调用，不放在文本 `Embedder` / `ViTEmbedder` 内。
+Robot observation image → multimodal caption (see `retrieval.caption` in `src/config.yaml`).
+Called from `Retriever.retrieve`, not inside text `Embedder` / `ViTEmbedder`.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ def _jpeg_data_url(pil: Any, cap_cfg: Dict[str, Any]) -> str:
 
 
 class DashScopeRobotCaptioner:
-    """阿里云 DashScope OpenAI 兼容接口，默认 qwen-vl-max。"""
+    """Alibaba DashScope OpenAI-compatible API; default qwen-vl-max."""
 
     def __init__(self, caption_cfg: Dict[str, Any]):
         self._cfg = caption_cfg
@@ -72,7 +72,7 @@ class DashScopeRobotCaptioner:
         self._client = OpenAI(api_key=api_key, base_url=base)
 
     def caption(self, image: Any) -> str:
-        """对机器人 RGB 观测生成英文描述。"""
+        """Generate an English description for the robot RGB observation."""
         from .image_utils import pil_from_any
 
         self._lazy_init_client()
@@ -122,7 +122,7 @@ class DashScopeRobotCaptioner:
 
 
 def build_robot_captioner(config_path: Optional[Path] = None) -> DashScopeRobotCaptioner:
-    """从统一 `config.yaml` 的 `retrieval` 段读取 `caption` 并构造 captioner。"""
+    """Load `caption` from the `retrieval` section of unified `config.yaml` and build a captioner."""
     p = config_path if config_path is not None else DEFAULT_CONFIG_PATH
     if not p.is_file():
         return DashScopeRobotCaptioner({})

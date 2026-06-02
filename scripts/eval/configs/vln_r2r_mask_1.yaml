@@ -1,5 +1,5 @@
-# 与 vln_r2r.yaml 相同，仅 dataset.data_path 指向 semantic_drop 0.5 派生集。
-# 切回官方 raw_data 时把 habitat_dual_system_cfg.py 里的 config_path 改回 vln_r2r.yaml。
+# Same as vln_r2r.yaml; only dataset.data_path points at the semantic_drop 0.5 derived split.
+# To use official raw_data again, set config_path in habitat_dual_system_cfg.py back to vln_r2r.yaml.
 
 # @package _global_
 

@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-不完全导航指令增强：抽象基类。
+Incomplete navigation instruction augmentation: abstract base class.
 
-输入为简短用户意图（如「去床边」）以及检索器给出的结构化证据（场景 / 区域 / 起终点视角、路径、分数、可选机器人观测描述）。
-输出为 ``AugmentationResult``，其中 ``instruction`` 为扩写后的可执行指令。
+Input: short user intent (e.g. "go to the bed") plus structured retrieval evidence
+(scenes / zones / start-end views, path, scores, optional robot observation text).
+Output: ``AugmentationResult`` with an expanded executable ``instruction``.
 
-后续可在此包内增加第二种、第三种具体增强器（模板融合、检索片段拼装等），均继承本基类。
+Additional augmenters (template fusion, evidence stitching, etc.) subclass this base.
 """
 
 from __future__ import annotations
@@ -19,10 +20,10 @@ from .types import AugmentationResult, normalize_robot_caption
 
 class InstructionAugmenter(ABC):
     """
-    指令增强器基类。
+    Base class for instruction augmenters.
 
-    ``evidence`` 建议使用 ``retrieval_evidence_from_plan(retriever_output)`` 生成，
-    或与之同结构的 dict（含 ``topk1_scenes`` / ``topk2_zones`` / ``topk3_pairs`` / ``robot_caption``）。
+    ``evidence`` should come from ``retrieval_evidence_from_plan(retriever_output)``
+    or a dict with the same keys (``topk1_scenes`` / ``topk2_zones`` / ``topk3_pairs`` / ``robot_caption``).
     """
 
     @abstractmethod
@@ -35,10 +36,10 @@ class InstructionAugmenter(ABC):
         path_region_descriptions: Optional[list[str]] = None,
     ) -> AugmentationResult:
         """
-        :param instruction: 信息不充分的用户意图
-        :param evidence: 检索证据（含置信度与路径）
-        :param robot_caption: 机器人观测文本描述；若为 None 则从 ``evidence['robot_caption']`` 读取并规范化
-        :param path_region_descriptions: 选中路径经过的区域（如 zone）的人类可读描述；通常需要通过 KB 由 view path 映射得到
+        :param instruction: underspecified user intent
+        :param evidence: retrieval evidence (scores and path)
+        :param robot_caption: robot observation text; if None, read from ``evidence['robot_caption']`` and normalize
+        :param path_region_descriptions: human-readable regions along the selected path (often mapped from KB view path)
         """
         raise NotImplementedError
 

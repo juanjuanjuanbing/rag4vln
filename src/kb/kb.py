@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-知识库实体：指向标准 KB 目录；``kb.scene(scene_id)`` 返回该场景完整 JSON（dict）。
-zone / view 等从返回的字典里取，例如 ``tree["zones"][zid]``、``tree["views"][vid]``。
+Knowledge base entity: points at a standard KB directory; ``kb.scene(scene_id)`` returns the full scene JSON (dict).
+Zones / views, etc. come from the returned dict, e.g. ``tree["zones"][zid]``, ``tree["views"][vid]``.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ SOURCE_EXPERIENCE = "experience"
 
 
 def scene_json_path(kb_root: Union[str, Path], scene_id: str) -> Path:
-    # MP3D 场景 id 里可能出现括号后缀（如 "XcA2TqTSSAj(1)"），需允许。
+    # MP3D scene ids may include parenthetical suffixes (e.g. "XcA2TqTSSAj(1)"); allow them.
     safe = "".join(c for c in scene_id if c.isalnum() or c in "-_()")
     if safe != scene_id:
         raise ValueError(f"Invalid scene_id: {scene_id!r}")
@@ -29,10 +29,10 @@ def scene_json_path(kb_root: Union[str, Path], scene_id: str) -> Path:
 
 class KnowledgeBase:
     """
-    标准 KB 目录：``manifest.json``、``scenes/``、``documents.json``、可选 ``imgs/``。
+    Standard KB layout: ``manifest.json``, ``scenes/``, ``documents.json``, optional ``imgs/``.
 
-    - ``scene_ids``：初始化时从 manifest 读取。
-    - ``scene(id)``：返回与 ``scenes/<id>.json`` 一致的字典（含 ``scene`` / ``zones`` / ``views`` / ``instances``）。
+    - ``scene_ids``: loaded from manifest at init.
+    - ``scene(id)``: dict matching ``scenes/<id>.json`` (``scene`` / ``zones`` / ``views`` / ``instances``).
     """
 
     def __init__(self, root: Union[str, Path]):
@@ -49,14 +49,14 @@ class KnowledgeBase:
         return dict(self._manifest)
 
     def invalidate_scene(self, scene_id: Optional[str] = None) -> None:
-        """丢弃缓存的场景 JSON（例如磁盘上刚更新过）。"""
+        """Drop cached scene JSON (e.g. after an on-disk update)."""
         if scene_id is None:
             self._scene_cache.clear()
         else:
             self._scene_cache.pop(scene_id, None)
 
     def scene(self, scene_id: str) -> Dict[str, Any]:
-        """加载并返回场景树（dict），与磁盘 JSON 结构一致。"""
+        """Load and return the scene tree (dict), same structure as on-disk JSON."""
         if scene_id not in self._scene_cache:
             path = scene_json_path(self.root, scene_id)
             if not path.is_file():
@@ -73,7 +73,7 @@ class KnowledgeBase:
         return self.root / "imgs"
 
     def view_image_path(self, scene_id: str, view_id: str) -> Optional[Path]:
-        """某 view 的 ``attributes.img`` 相对 KB 根解析后的绝对路径；img 为列表时取第一张。"""
+        """Absolute path to a view's ``attributes.img`` relative to KB root; if img is a list, use the first."""
         views = self.scene(scene_id).get("views")
         if not isinstance(views, dict):
             return None
@@ -88,7 +88,7 @@ class KnowledgeBase:
         return (self.root / rel.replace("\\", "/")).resolve()
 
     def load_view_image(self, scene_id: str, view_id: str):
-        """若存在渲染图且可读，返回 PIL RGB Image，否则 None。"""
+        """Return a PIL RGB Image if a rendered image exists and is readable; otherwise None."""
         p = self.view_image_path(scene_id, view_id)
         if p is None or not p.is_file():
             return None

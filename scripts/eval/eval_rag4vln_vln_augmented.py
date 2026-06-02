@@ -1,20 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-rag4vln 插入 InternVLA（HabitatVLN）的评测入口。
+rag4vln eval entry plugged into InternVLA (HabitatVLN).
 
-设计目标：
-- 模仿 `internnav/scripts/eval/eval.py` 的最小接口：`--config <eval_cfg.py>`
-- 但在评测前：对 dataset 里的 `instruction.instruction_text` 做一次
-  “rag4vln 检索 + 指令增强”，把增强后的指令替换进去，再跑评测。
+Goals:
+- Mirror ``internnav/scripts/eval/eval.py`` minimal CLI: ``--config <eval_cfg.py>``
+- Before eval: run rag4vln retrieval + instruction augmentation on each episode's
+  ``instruction.instruction_text``, replace with augmented text, then run Habitat eval.
 
-默认策略（为了可重复 + 避免 progress.json 跳过）：
-- 生成临时 eval cfg，强制把 `eval_settings.output_path` 指向一个新目录
+Default (reproducibility + avoid progress.json skip):
+- Patch eval cfg in place so ``eval_settings.output_path`` points to a fresh run directory.
 
-视角图导出与 ``eval_retriever.py`` 一致：默认写入本次 run 目录；加 ``--no-export-images`` 则关闭。
-写入 ``ins_start_view/``、``retriever_start_view/``、``retriever_end_view/``；若存在 ``--gt-csv`` 则额外写入 ``gt_start_view/``、``gt_end_view/``。
+View export matches ``eval_retriever.py``: default on under this run dir; ``--no-export-images`` disables.
+Writes ``ins_start_view/``, ``retriever_start_view/``, ``retriever_end_view/``; with ``--gt-csv`` also ``gt_start_view/``, ``gt_end_view/``.
 
-运行提示：若用 ``conda run`` 且长时间看不到终端输出，请加 ``--no-capture-output``
-（否则会缓冲到进程结束才打印）。见 ``rag4vln/scripts/eval/README.md``。
+Tip: with ``conda run``, add ``--no-capture-output`` if logs appear only at exit (buffered). See ``rag4vln/scripts/eval/README.md``.
 """
 
 from __future__ import annotations
@@ -38,7 +37,7 @@ from tqdm import tqdm  # type: ignore
 
 
 def _setup_sys_path(repo_root: Path) -> None:
-    # 让 `import internnav.*` 生效
+    # enable `import internnav.*`
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     rag4vln_root = repo_root / "rag4vln"
@@ -80,10 +79,10 @@ def _resolve_dataset_gz(repo_root: Path, data_path_pattern: str, split: str) -> 
 
 def _patch_eval_cfg_output_path(eval_cfg_py: Path, new_output_path: str) -> Path:
     """
-    在原 eval cfg python 上原地替换 eval_settings.output_path（不再另存一份超长文件名副本）。
+    Patch eval_settings.output_path in place on the eval cfg .py (no extra long-filename copy).
     """
     text = eval_cfg_py.read_text(encoding="utf-8")
-    # 只替换第一个 output_path: "..."
+    # replace only the first output_path: "..."
     pattern = r'("output_path"\s*:\s*")([^"]+)(")'
 
     def repl(m: re.Match) -> str:
@@ -167,27 +166,27 @@ def _resolve_start_view_png(
     ep_id: str,
     dataset_file: Path,
 ) -> Path:
-    """共用 ``start_view/r2r/<split>/ep_<id>.png``，与 eval_retriever / build_dataset_gt 的 from_r2r 一致。"""
+    """Shared ``start_view/r2r/<split>/ep_<id>.png``; same as eval_retriever / build_dataset_gt from_r2r."""
     vln_ce_root = (repo_root / "data" / "vln_ce").resolve()
     ds_parent = dataset_file.expanduser().resolve().parent
     try:
         rel_parts = ds_parent.relative_to(vln_ce_root).parts
     except ValueError as e:
         raise SystemExit(
-            f"start_view 路径要求 dataset JSON 位于 data/vln_ce 下: {dataset_file}"
+            f"start_view path requires dataset JSON under data/vln_ce: {dataset_file}"
         ) from e
     try:
         i = rel_parts.index("r2r")
     except ValueError as e:
         raise SystemExit(
-            f"start_view 共用路径要求在 vln_ce 相对目录中包含 r2r 段: {dataset_file}"
+            f"start_view shared path requires an r2r segment in the path relative to vln_ce: {dataset_file}"
         ) from e
     sub = Path(*rel_parts[i:])
     return (start_view_root / sub / f"ep_{ep_id}.png").resolve()
 
 
 def _parse_kb_scene_id(vln_scene_id: Any) -> str:
-    """与 ``build_dataset_gt._parse_kb_scene_id`` 一致：episode.scene_id → KB 场景名。"""
+    """Same as ``build_dataset_gt._parse_kb_scene_id``: episode.scene_id → KB scene name."""
     if not isinstance(vln_scene_id, str):
         return ""
     s = vln_scene_id.strip().replace("\\", "/")
@@ -205,7 +204,7 @@ def _parse_kb_scene_id(vln_scene_id: Any) -> str:
 
 
 def _load_gt_rows_by_episode(gt_csv_path: Path) -> Dict[str, List[Dict[str, str]]]:
-    """``dataset_gt.csv`` 中同一 ``episode_id`` 可能在 val_seen/val_unseen 各一行，须保留列表。"""
+    """Same ``episode_id`` may appear in val_seen and val_unseen in ``dataset_gt.csv``; keep a list per id."""
     out: Dict[str, List[Dict[str, str]]] = {}
     with gt_csv_path.open(encoding="utf-8", newline="") as gf:
         for row in csv.DictReader(gf):
@@ -241,7 +240,7 @@ def _lookup_gt_row(
 
 
 def _save_kb_view_image(kb: Any, scene_id: str, view_id: str, dest: Path) -> bool:
-    """与 ``eval_retriever.py`` 一致：优先拷贝 KB 磁盘文件，否则 PIL 保存。"""
+    """Same as ``eval_retriever.py``: copy KB file on disk if present, else save via PIL."""
     p = kb.view_image_path(scene_id, view_id)
     if p is not None and p.is_file():
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -262,7 +261,7 @@ def _export_retriever_rank_view_images(
     ep_id: str,
     k_export: int,
 ) -> None:
-    """导出检索 ``topk3_pairs`` 前 k 名的 KB 起/终点视角图（与检索器评测目录名一致）。"""
+    """Export top-k KB start/end view images from retrieval ``topk3_pairs`` (same dirs as retriever eval)."""
     top_pairs = plan.get("topk3_pairs") or []
     for rank, pair in enumerate(top_pairs[: max(1, k_export)], start=1):
         if not isinstance(pair, dict):
@@ -287,7 +286,7 @@ def _export_retriever_rank_view_images(
 
 
 def _export_ins_start_view(export_root: Path, ep_id: str, ins_src: Optional[Path]) -> None:
-    """``ins_start_view``：与检索输入一致的起始观测 PNG（与 eval_retriever 一致）。"""
+    """``ins_start_view``: start observation PNG used for retrieval (same as eval_retriever)."""
     if ins_src is not None and ins_src.is_file():
         dest_ins = export_root / "ins_start_view" / f"ep_{ep_id}.png"
         dest_ins.parent.mkdir(parents=True, exist_ok=True)
@@ -302,7 +301,7 @@ def _export_gt_kb_endpoint_views(
     gt_start_view: str,
     gt_end_view: str,
 ) -> None:
-    """``gt_start_view`` / ``gt_end_view``：GT CSV 对应 KB 全景（检索器评测目录无此两项，作对照用）。"""
+    """``gt_start_view`` / ``gt_end_view``: GT CSV KB panoramas (not in retriever eval; for comparison)."""
     if gt_scene and gt_start_view:
         p = export_root / "gt_start_view" / f"ep_{ep_id}.png"
         if not _save_kb_view_image(kb, gt_scene, gt_start_view, p):
@@ -324,30 +323,30 @@ def main() -> None:
         description="rag4vln augmented VLN eval entry",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "提示：使用 `conda run` 时默认会捕获 stdout/stderr，长时间跑可能像「没有任何输出」。\n"
-            "请加上 `--no-capture-output`（或 `--live-stream`）以便实时看到日志，例如：\n"
+            "Tip: `conda run` captures stdout/stderr by default; long runs may look like no output.\n"
+            "Add `--no-capture-output` (or `--live-stream`) for live logs, e.g.:\n"
             "  conda run --no-capture-output -n inter_hab python rag4vln/scripts/eval/eval_rag4vln_vln_augmented.py ...\n"
-            "多行命令里反斜杠续行必须是行末最后一个字符；`--save-instruction-pairs` 不要拆成两行。\n"
-            "离线或 DNS 失败（OpenAI APIConnectionError）：请加 `--no-robot-image`，检索阶段将不调 VLM caption。"
+            "Line continuations with backslash must be the last character on the line; do not split `--save-instruction-pairs`.\n"
+            "Offline or DNS failure (OpenAI APIConnectionError): use `--no-robot-image` to skip VLM caption during retrieval."
         ),
     )
     parser.add_argument(
         "--config",
         type=str,
         default="rag4vln/scripts/eval/configs/habitat_dual_system_cfg.py",
-        help="InternNav 的 eval cfg python（相对 repo_root 或绝对路径）",
+        help="InternNav eval cfg .py (relative to repo_root or absolute)",
     )
     parser.add_argument(
         "--augmenter",
         choices=("llm_direct", "template_path", "semantic_pathplanning", "r_only"),
         default="semantic_pathplanning",
-        help="含 r_only：仅拼接检索证据与原始指令（无 LLM baseline）",
+        help="Includes r_only: concat retrieval evidence + original instruction (no LLM)",
     )
     parser.add_argument(
         "--rag4vln-config",
         type=Path,
         default=Path("rag4vln/src/config.yaml"),
-        help="rag4vln 统一 YAML（basic / retrieval / augment）",
+        help="rag4vln unified YAML (basic / retrieval / augment)",
     )
     parser.add_argument("--kb-root", type=Path, default=Path("rag4vln/data/kb/memory"))
     parser.add_argument("--text-embedder", choices=("auto", "bert", "sbert", "bge", "binary"), default="binary")
@@ -356,50 +355,50 @@ def main() -> None:
     parser.add_argument("--topk1", type=int, default=3)
     parser.add_argument("--topk2", type=int, default=3)
     parser.add_argument("--topk3", type=int, default=3)
-    parser.add_argument("--max-episodes", type=int, default=1, help="只增强前 N 个 episode，评测也只跑这 N 个")
-    parser.add_argument("--robot-image", type=Optional[Path], default=None, help="可选：固定使用该图作为起始图像")
+    parser.add_argument("--max-episodes", type=int, default=1, help="Augment and eval only the first N episodes")
+    parser.add_argument("--robot-image", type=Optional[Path], default=None, help="Optional fixed start image for all episodes")
     parser.add_argument(
         "--no-robot-image",
         action="store_true",
-        help="检索不传起始观测：跳过 VLM caption（无 OpenAI 网络调用），机器人图文查询嵌入为零；可与 r_only 等搭配离线跑",
+        help="No start observation for retrieval: skip VLM caption (no OpenAI); zero robot image/text query emb; offline-friendly with r_only",
     )
     parser.add_argument(
         "--kb-embed-cache",
         type=Path,
         default=None,
-        help="KB embedding 缓存文件（.pt）；首次构建后可复用以显著提速",
+        help="KB embedding cache file (.pt); reuse after first build for large speedup",
     )
     parser.add_argument(
         "--rebuild-kb-embed-cache",
         action="store_true",
-        help="强制重建 KB embedding 缓存（忽略已有缓存文件）",
+        help="Force rebuild KB embedding cache (ignore existing file)",
     )
     parser.add_argument(
         "--save-instruction-pairs",
         action="store_true",
-        help="保存原始指令与增强后指令对照文件（JSONL）",
+        help="Save original vs augmented instruction pairs (JSONL)",
     )
     parser.add_argument(
         "--instruction-pairs-path",
         type=Path,
         default=None,
-        help="指令对照输出路径（默认写到当前 run 输出目录）",
+        help="Path for instruction pair JSONL (default: current run output dir)",
     )
-    parser.add_argument("--save-video", action="store_true", help="是否启用 internnav 保存视频（需要额外依赖）")
+    parser.add_argument("--save-video", action="store_true", help="Enable internnav video saving (extra deps)")
     parser.add_argument(
         "--no-export-images",
         action="store_true",
-        help="不导出视角图到 run 目录（与 eval_retriever.py --no-export-images 语义一致；默认会导出）",
+        help="Do not export view images to run dir (same as eval_retriever --no-export-images; export is default)",
     )
     parser.add_argument(
         "--gt-csv",
         type=Path,
         default=Path("data/vln_ce/dataset_gt.csv"),
-        help="GT 表路径（导出开启时用于 gt_start_view / gt_end_view；缺失则仅跳过这两项）",
+        help="GT CSV path for gt_start_view / gt_end_view when exporting; skip those dirs if missing",
     )
     args = parser.parse_args()
     if args.no_robot_image and args.robot_image is not None:
-        raise SystemExit("不能同时使用 --robot-image 与 --no-robot-image")
+        raise SystemExit("Cannot use --robot-image and --no-robot-image together")
 
     try:
         sys.stdout.reconfigure(line_buffering=True)  # type: ignore[attr-defined]
@@ -412,7 +411,7 @@ def main() -> None:
     print(f"[RAG4VLN] repo_root={repo_root}", flush=True)
     if args.no_robot_image:
         print(
-            "[RAG4VLN] --no-robot-image：检索不调 VLM caption；若有 ins_start_view 导出仍尝试拷贝磁盘 PNG（若存在）",
+            "[RAG4VLN] --no-robot-image: retrieval skips VLM caption; ins_start_view export still copies on-disk PNG if present",
             flush=True,
         )
 
@@ -692,13 +691,13 @@ def main() -> None:
                     "augmenter": args.augmenter,
                     "original_instruction_text": original_instr,
                     "augmented_instruction_text": new_instr,
-                    # 记录大模型原始回复，便于回看 SPP 三阶段输出与排查解析问题。
+                    # Raw LLM reply for SPP three-stage review and parse debugging.
                     "raw_model_output": getattr(aug_res, "raw_model_output", None),
-                    # 记录结构化中间信息（如 task_narrative / waypoints / fallback 原因等）。
+                    # Structured intermediates (task_narrative / waypoints / fallback reason, etc.).
                     "augment_meta": meta,
                 }
             )
-        # tokens 不强制重算；目前 evaluator prompt 主要依赖 instruction_text
+        # tokens not recomputed; evaluator prompt mainly uses instruction_text
         pbar.update(1)
     pbar.close()
     print("[RAG4VLN] augmentation phase finished", flush=True)
@@ -722,7 +721,7 @@ def main() -> None:
         print(f"[augment] instruction pairs saved: {pairs_path}")
 
     habitat_yaml_out = out_dir / f"vln_r2r_aug_{ts}.yaml"
-    # 复用 habitat yaml，仅替换 data_path
+    # reuse habitat yaml, only patch data_path
     habitat_yaml_text = habitat_yaml_path.read_text(encoding="utf-8")
     pattern = r"(^\s*data_path:\s*).*$"
     repl = r"\1" + json.dumps(str(dataset_out_gz), ensure_ascii=False)
@@ -732,7 +731,7 @@ def main() -> None:
     habitat_yaml_out.write_text(habitat_yaml_text2, encoding="utf-8")
 
     eval_cfg_out_py = out_dir / f"habitat_dual_system_cfg_aug_{ts}.py"
-    # 替换 config_path 为临时 habitat yaml
+    # point config_path at temporary habitat yaml
     text = eval_cfg_py.read_text(encoding="utf-8")
     text2, n = re.subn(
         r"('config_path'\s*:\s*')([^']+)(')",
@@ -744,11 +743,11 @@ def main() -> None:
         raise RuntimeError(f"Failed to patch eval cfg config_path: {eval_cfg_out_py}")
     eval_cfg_out_py.write_text(text2, encoding="utf-8")
 
-    # 强制输出路径唯一，避免 progress.json 造成 0it
+    # unique output path to avoid progress.json skipping all episodes (0it)
     output_path_unique = str((out_dir / "internnav_output").resolve())
     eval_cfg_final_py = _patch_eval_cfg_output_path(eval_cfg_out_py, output_path_unique)
 
-    # 如果不保存视频，强制 save_video False（避免 cv2 依赖）
+    # if not saving video, force save_video False (avoids cv2 dependency)
     if not args.save_video:
         etxt = eval_cfg_final_py.read_text(encoding="utf-8")
         etxt2, _n = re.subn(r'("save_video"\s*:\s*)True\b', r'\1False', etxt, flags=re.IGNORECASE)

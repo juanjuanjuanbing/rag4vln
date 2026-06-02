@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-检索 Demo：KB + ``Retriever.retrieve``，打印/保存计划（不做指令增强）。
+Retrieval demo: KB + ``Retriever.retrieve``; print/save plan (no instruction augmentation).
 
-在仓库根目录执行：``python rag4vln/scripts/demo/test_retriever_demo.py``
+Run from repo root: ``python rag4vln/scripts/demo/test_retriever_demo.py``
 """
 
 from __future__ import annotations
@@ -34,11 +34,11 @@ from src.retrieval import BinaryRandomEmbedder, Retriever  # noqa: E402
 
 def _load_robot_image(path: Path) -> Any:
     if not path.is_file():
-        raise SystemExit(f"机器人测试图不存在: {path.resolve()}")
+        raise SystemExit(f"Robot test image not found: {path.resolve()}")
     try:
         from PIL import Image  # type: ignore
     except ImportError as e:
-        raise ImportError("加载图片需要 pillow：pip install pillow") from e
+        raise ImportError("Loading images requires pillow: pip install pillow") from e
     return Image.open(path).convert("RGB")
 
 
@@ -72,16 +72,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="rag4vln Retriever-only demo")
     parser.add_argument("--text-embedder", choices=("auto", "bert", "sbert", "bge", "binary"), default="auto")
     parser.add_argument("--vision-embedder", choices=("vit", "binary"), default="vit")
-    parser.add_argument("--config", type=Path, default=None, help=f"rag4vln 统一配置，默认 {DEFAULT_RAG4VLN_CONFIG}")
+    parser.add_argument("--config", type=Path, default=None, help=f"rag4vln unified config (default {DEFAULT_RAG4VLN_CONFIG})")
     parser.add_argument("--kb-root", type=Path, default=DEFAULT_KB)
     parser.add_argument("--instruction", type=str, default="Represent this sentence for searching relevant passages: I want to watch TV")
     parser.add_argument("--binary-dim", type=int, default=64)
-    parser.add_argument("--robot-image", type=Path, default=None, help=f"机器人观测图，默认 {DEFAULT_ROBOT_IMAGE}")
-    parser.add_argument("--no-robot-image", action="store_true", help="不传图，跳过 VLM caption（与旧版默认行为一致）")
+    parser.add_argument("--robot-image", type=Path, default=None, help=f"Robot observation image (default {DEFAULT_ROBOT_IMAGE})")
+    parser.add_argument("--no-robot-image", action="store_true", help="No image; skip VLM caption (legacy default)")
     parser.add_argument(
         "--retrieve-verbose",
         action="store_true",
-        help="打印 Retriever 调试日志（含实际传入 text_embedder 的指令字符串，便于核对 BGE 前缀）",
+        help="Print Retriever debug logs (incl. instruction string passed to text_embedder, for BGE prefix check)",
     )
     parser.add_argument("--result-dir", type=Path, default=RAG4VLN_ROOT / "results")
     parser.add_argument("--no-save-result", action="store_true")
@@ -90,7 +90,7 @@ def main() -> None:
     cfg = args.config if args.config is not None else DEFAULT_RAG4VLN_CONFIG
     need_config = args.text_embedder != "binary" or args.vision_embedder == "vit"
     if need_config and not cfg.is_file():
-        raise SystemExit(f"找不到检索 config：{cfg}")
+        raise SystemExit(f"Retrieval config not found: {cfg}")
 
     if args.text_embedder == "binary" and args.vision_embedder == "binary":
         binary_dim = max(1, int(args.binary_dim))

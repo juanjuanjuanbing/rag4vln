@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-检索框架：`Retriever` + `ScoreCache`；嵌入为 **文本编码器** + **视觉编码器**（或兼容旧版 `Embedder`）。
+Retrieval framework: `Retriever` + `ScoreCache`; embeddings use **text encoder** + **vision encoder** (or legacy `Embedder`).
 
-机器人观测的 VLM caption 在 `retrieve` 内调用 `DashScopeRobotCaptioner`，再经 **文本 `Embedder`**（如 `BERTEmbedder` / `SentenceBERTEmbedder` / `BGEEmbedder`）嵌入。
+Robot observation VLM caption runs inside `retrieve` via `DashScopeRobotCaptioner`, then **text `Embedder`** (e.g. `BERTEmbedder` / `SentenceBERTEmbedder` / `BGEEmbedder`).
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from .embedder import BGEEmbedder, Embedder
 
 
 class ScoreCache:
-    """分数缓存（最简内存版接口）。"""
+    """Score cache (minimal in-memory interface)."""
 
     def __init__(self, max_entries: int = 200_000):
         self._max = max_entries
@@ -42,7 +42,7 @@ class ScoreCache:
         return self._data.get(key)
 
     def set(self, key: Any, value: Any) -> None:
-        # 骨架阶段：不实现淘汰策略，后续可接 LRU。
+        # Stub: no eviction policy yet; LRU can be added later.
         if len(self._data) > self._max:
             self._data.clear()
         self._data[key] = value
@@ -53,10 +53,10 @@ class ScoreCache:
 
 class Retriever:
     """
-    最简检索器骨架。
+    Minimal retriever skeleton.
 
-    - `score_all`：一次性批量计算全量分数（torch）
-    - `retrieve`：推荐传入 **`text_embedder`** + **`vision_embedder`**（均为 `Embedder` 子类）；机器人图 caption 在 `retrieve` 内调用大模型，再经 **文本 embedder** 写入 `instruction=caption`。
+    - `score_all`: batch-compute all scores at once (torch)
+    - `retrieve`: pass **`text_embedder`** + **`vision_embedder`** (`Embedder` subclasses); robot image caption uses the VLM in `retrieve`, then **text embedder** with `instruction=caption`.
     """
 
     def __init__(
@@ -85,14 +85,14 @@ class Retriever:
             cap_path = Path(caption_config_path) if caption_config_path is not None else None
             self._robot_captioner = build_robot_captioner(cap_path)
 
-        # 检索混合系数（从统一 config 的 retrieval 段读取；缺省为 0）
+        # Retrieval mix coeffs from unified config retrieval section; default 0
         self._alpha = 0.0
         self._beta = 0.0
         self._score_norm_mode = "minmax"
         self._score_norm_eps = 1e-6
-        # 未在 YAML 中显式配置时默认 False，与历史「无归一化」主路径行为一致
+        # Default False when omitted in YAML (legacy no-normalization behavior)
         self._normalize_visual_semantic_scores = False
-        # 消融：起点/终点视角匹配不乘 scene_belonging_score（区域仍乘场景分）
+        # Ablation: start/end view match skips scene_belonging_score (zones still use scene score)
         self._no_scene_gate_on_view_scores = False
         self._bge_query_prefix = "Represent this sentence for searching relevant passages: "
         self._kb_embed_cache_mem: Dict[str, Dict[str, Any]] = {}
@@ -267,38 +267,38 @@ class Retriever:
         cache_key: Optional[str] = None,
     ) -> Dict[str, torch.Tensor]:
         """
-        一次性完成全量打分（torch）并写入 score cache。
+        Batch-score all items (torch) and write to the score cache.
 
-        输入形状约定（层级张量）：
-        - query_instruction_emb: [D] 或 [1, D]
-        - query_image_semantic_emb: [D] 或 [1, D]
-        - query_image_query_emb: [D] 或 [1, D]
+        Input shape conventions (hierarchical tensors):
+        - query_instruction_emb: [D] or [1, D]
+        - query_image_semantic_emb: [D] or [1, D]
+        - query_image_query_emb: [D] or [1, D]
         - kb_scene_semantic_emb: [S, D]
-        - kb_zone_semantic_emb: [S, Z, D]（不足用 0 padding）
-        - kb_view_semantic_emb: [S, Z, V, D]（不足用 0 padding）
-        - kb_view_image_emb: [S, Z, V, D]（不足用 0 padding）
-        - kb_view_position: [S, Z, V, 3]（不足用 0 padding）
+        - kb_zone_semantic_emb: [S, Z, D] (zero-padded when shorter)
+        - kb_view_semantic_emb: [S, Z, V, D] (zero-padded when shorter)
+        - kb_view_image_emb: [S, Z, V, D] (zero-padded when shorter)
+        - kb_view_position: [S, Z, V, 3] (zero-padded when shorter)
 
-        返回的主要分数字段：
+        Main score fields returned:
         - view_image_similarity: [S, Z, V]
-        - view_semantic_similarity: [S, Z, V]（视角指令语义相似度：KB view description vs query instruction）
-        - view_image_semantic_similarity: [S, Z, V]（视角图片语义相似度：KB view description vs query image-caption text）
-        - zone_image_semantic_similarity: [S, Z]（区域图片语义相似度：KB zone description vs query image-caption text）
+        - view_semantic_similarity: [S, Z, V] (view instruction semantics: KB view description vs query instruction)
+        - view_image_semantic_similarity: [S, Z, V] (view image semantics: KB view description vs query image-caption text)
+        - zone_image_semantic_similarity: [S, Z] (zone image semantics: KB zone description vs query image-caption text)
         - scene_img_semantic_similarity: [S]
-        - scene_belonging_score: 场景归属分数 = alpha*scene图片语义相似度 + (1-alpha)*scene最大视角图片相似度
-        - start_zone_belonging_score: [S, Z, 1] = scene_belonging_score * 区域图片语义相似度
-        - start_view_position_score: [S, Z, V, 1] = scene_belonging_score * [ beta*distance + (1-beta)*(alpha*视角图片语义 + (1-alpha)*视角图片) ]
-        - end_zone_belonging_score: [S, Z, 1] = scene_belonging_score * zone_image_semantic_similarity（当前 end zone 由 end view 所属确定，保留字段兼容）
-        - end_view_score: [S, Z, V, 1] = scene_belonging_score * 视角指令语义（可经归一化）
+        - scene_belonging_score: alpha*scene image semantics + (1-alpha)*max view image similarity per scene
+        - start_zone_belonging_score: [S, Z, 1] = scene_belonging_score * zone image semantics
+        - start_view_position_score: [S, Z, V, 1] = scene_belonging_score * [ beta*distance + (1-beta)*(alpha*view image semantics + (1-alpha)*view image) ]
+        - end_zone_belonging_score: [S, Z, 1] = scene_belonging_score * zone_image_semantic_similarity (end zone from end view; kept for compatibility)
+        - end_view_score: [S, Z, V, 1] = scene_belonging_score * view instruction semantics (optionally normalized)
 
-        ``normalize_visual_semantic_scores``（YAML ``retrieval.normalize_visual_semantic_scores``）为真时，
-        场景/区域/视角的**视觉与语义余弦**在参与 alpha 混合前按 ``score_norm_mode``（minmax/zscore）处理；
-        **distance_score 不归一化**。未在配置中设置该键时主路径默认为关（保持历史行为）。
-        说明：padding（全 0 向量）会自动被识别为无效项并通过 mask 屏蔽。
+        When ``normalize_visual_semantic_scores`` (YAML ``retrieval.normalize_visual_semantic_scores``) is true,
+        scene/zone/view **visual and semantic cosines** are normalized via ``score_norm_mode`` (minmax/zscore) before alpha mixing;
+        **distance_score is not normalized**. Default off when the key is omitted (legacy behavior).
+        Note: zero-padding (all-zero vectors) is masked as invalid automatically.
         """
-        # 统一系数：
-        # - alpha：文本/图像的权重（用于场景匹配 & 起始视角匹配）
-        # - beta ：位置/视角的权重（用于起始与终点视角匹配）
+        # Mix coefficients:
+        # - alpha: text/image weight (scene match & start-view match)
+        # - beta: position/view weight (start and end view match)
         alpha = float(getattr(self, "_alpha", 0.0))
         beta = float(getattr(self, "_beta", 0.0))
 
@@ -349,7 +349,7 @@ class Retriever:
 
         eps = 1e-8
 
-        # 1) 视角画面相似度（只在 view 图像有效时计入）
+        # 1) View image similarity (only when view image embedding is valid)
         view_img_norm = view_img_e.norm(dim=3)
         view_image_valid = view_img_norm > eps
         view_img_e_n = view_img_e / (view_img_norm.unsqueeze(-1) + eps)
@@ -362,7 +362,7 @@ class Retriever:
             view_image_valid, view_image_similarity, torch.zeros_like(view_image_similarity)
         )
 
-        # 2) 视角语义相似度（用语义有效性定义“view 是否存在”，避免没渲染图时把视角全掐掉）
+        # 2) View semantic similarity (semantic validity defines view existence; avoids dropping views without rendered images)
         view_sem_norm = view_e.norm(dim=3)
         view_sem_valid = view_sem_norm > eps
         view_e_n = view_e / (view_sem_norm.unsqueeze(-1) + eps)
@@ -377,7 +377,7 @@ class Retriever:
             torch.zeros_like(view_semantic_similarity),
         )
 
-        # 视角图片语义相似度：view_semantic_emb（KB view description） vs query_image_semantic_emb（caption->text）
+        # View image semantics: view_semantic_emb (KB view description) vs query_image_semantic_emb (caption->text)
         r_img_sem_n = r_img_sem / (r_img_sem.norm() + eps)
         view_image_semantic_similarity = torch.sum(
             view_e_n * r_img_sem_n.view(1, 1, 1, -1),
@@ -389,20 +389,20 @@ class Retriever:
             torch.zeros_like(view_image_semantic_similarity),
         )
 
-        # 统一定义：view_valid 用语义有效性（不依赖 view image emb 是否存在）
+        # view_valid uses semantic validity (not whether view image emb exists)
         view_valid = view_sem_valid
-        # 3) 区域语义相似度
+        # 3) Zone semantics
         zone_norm = zone_e.norm(dim=2)
         zone_valid = zone_norm > 1e-8
         zone_e_n = zone_e / (zone_norm.unsqueeze(-1) + 1e-8)
-        # 区域图片语义相似度：zone_semantic_emb（KB zone description） vs query_image_semantic_emb（caption->text）
+        # Zone image semantics: zone_semantic_emb (KB zone description) vs query_image_semantic_emb (caption->text)
         zone_image_semantic_similarity = torch.sum(zone_e_n * r_img_sem_n.view(1, 1, -1), dim=2)
         zone_image_semantic_similarity = torch.where(
             zone_valid,
             zone_image_semantic_similarity,
             torch.zeros_like(zone_image_semantic_similarity),
         )
-        # 场景图片语义相似度：scene_semantic_emb（KB scene description） vs query_image_semantic_emb（caption->text）
+        # Scene image semantics: scene_semantic_emb (KB scene description) vs query_image_semantic_emb (caption->text)
         scene_img_semantic_similarity = self._cosine_matrix(scene_e, r_img_sem)
 
         # scene_max_view_image_sim[s] = max_{view in scene s}(view_image_similarity)
@@ -413,7 +413,7 @@ class Retriever:
         scene_has_view = view_image_valid.any(dim=(1, 2))
         scene_max_view_image_sim = torch.where(scene_has_view, scene_max_view_image_sim, torch.zeros_like(scene_max_view_image_sim))
 
-        # 视觉/语义余弦可选归一化（开关 + score_norm_mode）；distance 不归一化。
+        # Optional normalization for visual/semantic cosines (flag + score_norm_mode); distance is not normalized.
         base_norm_mode = str(getattr(self, "_score_norm_mode", "none"))
         norm_eps = float(getattr(self, "_score_norm_eps", 1e-6))
         norm_mode = base_norm_mode if bool(getattr(self, "_normalize_visual_semantic_scores", False)) else "none"
@@ -424,17 +424,17 @@ class Retriever:
         view_img_for_mix = self._normalize_scores(view_image_similarity, norm_mode, norm_eps)
         view_txt_sem_for_mix = self._normalize_scores(view_semantic_similarity, norm_mode, norm_eps)
 
-        # 场景匹配分数：a*(scene图片语义) + (1-a)*(scene图片相似度=max view图片相似度)
+        # Scene match: a*(scene image semantics) + (1-a)*(max view image similarity)
         scene_belonging_score = alpha * scene_sem_for_mix + (1 - alpha) * scene_vis_for_mix
 
-        # 起点/终点区域归属分数
+        # Start/end zone belonging scores
         scene_score_2d = scene_belonging_score.view(num_scene, 1)
-        # 起始区域：scene_score * zone_图片语义相似度（与开关一致的归一化版本）
+        # Start zone: scene_score * zone image semantics (normalized per flag)
         start_zone_belonging_score = (scene_score_2d * zone_sem_for_mix).unsqueeze(-1)
-        # 终点区域由终点视角所属确定，因此 end_zone_belonging_score 这里不用于选择；保留字段以兼容输出。
+        # End zone is determined by end view; end_zone_belonging_score kept for output compatibility only.
         end_zone_belonging_score = (scene_score_2d * zone_sem_for_mix).unsqueeze(-1)
 
-        # 距离分数：1 / (1 + ||view_pos - robot_pos||2)
+        # Distance score: 1 / (1 + ||view_pos - robot_pos||2)
         dist = torch.norm(view_pos - r_pos.view(1, 1, 1, -1), dim=3)
         distance_score = 1.0 / (1.0 + dist)
         distance_score = torch.where(view_valid, distance_score, torch.zeros_like(distance_score))
@@ -445,8 +445,8 @@ class Retriever:
             if bool(getattr(self, "_no_scene_gate_on_view_scores", False))
             else scene_score_3d
         )
-        # 起始视角匹配分数：
-        # scene_score * [ beta*distance + (1-beta)*( alpha*view图片语义 + (1-alpha)*view图片 ) ]
+        # Start-view match score:
+        # scene_score * [ beta*distance + (1-beta)*( alpha*view image semantics + (1-alpha)*view image ) ]
         start_view_position_score = (
             view_scene_gate
             * (
@@ -459,8 +459,8 @@ class Retriever:
             )
         ).unsqueeze(-1)
 
-        # 终点视角匹配分数（仅语义，不含距离项）：
-        # scene_score * view指令语义（与开关一致的归一化版本）
+        # End-view match score (semantics only, no distance):
+        # scene_score * view instruction semantics (normalized per flag)
         end_view_score = (
             view_scene_gate
             * view_txt_sem_for_mix
@@ -520,24 +520,24 @@ class Retriever:
         force_rebuild_kb_cache: bool = False,
     ) -> Dict[str, Any]:
         """
-        主函数：给定 KB + 状态，返回导航检索计划 JSON。
+        Main entry: given KB + state, return navigation retrieval plan JSON.
 
-        步骤（对应你的描述）：
-        1) 在 KB 上完成嵌入（scene/zone/view 文本 + view 画面）。
-        2) 通过 `score_all` 一次性计算场景归属/区域归属/起点-终点分数与 mask。
-        3) rerank：取 topK 场景、topK 起点区域、topK 起点-终点对。
-        4) 对每个起点-终点对，用 `kb` 的连通图（view_graph.adjacency）跑 Dijkstra 得到路径。
-        5) 返回 JSON，含 `robot_caption`（双嵌入器且提供 `robot_image` 时为 VLM 英文描述，否则为 `None`）、
-           `topk1_scenes` / `topk2_zones` / `topk3_pairs`。
+        Steps:
+        1) Embed KB (scene/zone/view text + view images).
+        2) `score_all` for scene/zone/start-end scores and masks.
+        3) Rerank: top-K scenes, start zones, start-end pairs.
+        4) Dijkstra on `kb` view_graph.adjacency for each pair path.
+        5) Return JSON with `robot_caption` (VLM English when dual embedders + `robot_image`, else `None`),
+           `topk1_scenes` / `topk2_zones` / `topk3_pairs`.
 
-        可选 ``pair_ranking_topk``：不为 ``None`` 时，用其替代 ``topk3_pairs`` 控制
-        每场景起点/终点候选数（top-k 分数）及最终 pair 列表截断长度，用于评测里按更长列表算 MRR（1/rank，不做 rank>k 置零）。
+        Optional ``pair_ranking_topk``: when not ``None``, overrides ``topk3_pairs`` for per-scene start/end
+        candidate depth and final pair list length (longer lists for MRR eval; 1/rank, no rank>k zeroing).
 
-        当 ``timing=True`` 时，额外返回 ``timing_ms``（单位 ms）并打印：
+        When ``timing=True``, also return ``timing_ms`` (ms) and print:
         ``total`` / ``llm_call`` /
         ``text_embedding_query`` / ``text_embedding_kb`` /
         ``image_embedding_query`` / ``image_embedding_kb`` /
-        ``scoring`` / ``output_with_path``。
+        ``scoring`` / ``output_with_path``.
         """
         def _v(msg: str) -> None:
             if verbose:
@@ -550,7 +550,7 @@ class Retriever:
             if torch is None:
                 return
             if torch.cuda.is_available():
-                # 确保 CUDA 异步计算结束后再计时，避免计时偏小
+                # Sync CUDA before timing so async work is not under-counted
                 torch.cuda.synchronize()
 
         t_total_0 = time.perf_counter() if timing else 0.0
@@ -679,7 +679,7 @@ class Retriever:
             raise NotImplementedError("set text_embedder + vision_embedder")
 
         # -------------------------
-        # 0) 准备场景/区域/视角索引
+        # 0) Build scene/zone/view indices
         # -------------------------
         def _is_valid_scene_id(scene_id: str) -> bool:
             safe = "".join(c for c in scene_id if c.isalnum() or c in "-_")
@@ -702,9 +702,9 @@ class Retriever:
                 out_empty["timing_ms"] = _finalize_timing()
             return out_empty
 
-        # 每个 scene 内：
-        # - zone_ids 按 scene.attributes.zone_ids 排序
-        # - view_ids 按 scene.attributes.view_ids 排序（用于 adjacency 索引映射）
+        # Per scene:
+        # - zone_ids sorted by scene.attributes.zone_ids
+        # - view_ids sorted by scene.attributes.view_ids (for adjacency index mapping)
         scene_zone_ids: List[List[str]] = []
         scene_view_ids_order: List[List[str]] = []
         view_ids_in_zone: List[List[List[str]]] = []  # [S][Z][Vi]
@@ -720,7 +720,7 @@ class Retriever:
 
             zones_dict = tree.get("zones") or {}
             views_dict = tree.get("views") or {}
-            # view->zone 关系用于把 view 按 zone 分桶
+            # view->zone mapping to bucket views by zone
             view_to_zone: Dict[str, Optional[str]] = {}
             for vid, vnode in views_dict.items():
                 attrs = vnode.get("attributes") or {}
@@ -753,11 +753,11 @@ class Retriever:
                 out_empty2["timing_ms"] = _finalize_timing()
             return out_empty2
 
-        # robot_image 存在时由 captioner 生成查询图像语义文本
+        # When robot_image is set, captioner produces query image semantic text
         robot_caption: Optional[str] = None
 
         # -------------------------
-        # 1) 计算 embedding（scene/zone/view 文本 + view 画面）
+        # 1) Compute embeddings (scene/zone/view text + view images)
         # -------------------------
         def as_1d_float_tensor(x: Any, name: str) -> torch.Tensor:
             t = torch.as_tensor(x, dtype=torch.float32)
@@ -788,7 +788,7 @@ class Retriever:
         t_q0 = time.perf_counter() if timing else 0.0
         if timing:
             _maybe_sync_cuda()
-        # BGE 官方检索用法：仅对用户导航指令加 query 前缀；caption 与 KB 文本不加
+        # BGE retrieval: query prefix on user instruction only; not on caption or KB text
         instr_for_text_emb = instruction
         if (
             isinstance(te, BGEEmbedder)
@@ -873,7 +873,7 @@ class Retriever:
             zone_id_map = cache_payload["zone_id_map"]
             view_id_map = cache_payload["view_id_map"]
         else:
-            # 预分配 padding 张量 + id 映射表（大块内存与 Python 嵌套列表，可能占比较明显）
+            # Preallocate padding tensors + id maps (can use noticeable memory)
             t_kprep0 = time.perf_counter() if timing else 0.0
             kb_scene_semantic_emb = torch.zeros((s_cnt, d_dim), dtype=torch.float32)
             kb_zone_semantic_emb = torch.zeros((s_cnt, z_cnt_max, d_dim), dtype=torch.float32)
@@ -887,7 +887,7 @@ class Retriever:
                 f"kb_view_semantic_emb={tuple(kb_view_semantic_emb.shape)}"
             )
 
-            # 用于从 (s,z,v) 映射到 KB 的 id
+            # Map (s,z,v) indices to KB ids
             zone_id_map: List[List[Optional[str]]] = [[None for _ in range(z_cnt_max)] for _ in range(s_cnt)]
             view_id_map: List[List[List[Optional[str]]]] = [
                 [[None for _ in range(v_cnt_max)] for _ in range(z_cnt_max)] for _ in range(s_cnt)
@@ -981,7 +981,7 @@ class Retriever:
                 self._save_kb_cache_file(kb_cache_file, payload)
 
         # -------------------------
-        # 2) 用 score_all 一次性打分
+        # 2) Batch score via score_all
         # -------------------------
         _v("[retrieve] embeddings filled, calling score_all() ...")
         query_position_t = torch.as_tensor(robot_position, dtype=torch.float32).flatten()
@@ -994,9 +994,9 @@ class Retriever:
         score_out = self.score_all(
             query_position=query_position_t,
             query_instruction_emb=query_instruction_emb,
-            # 场景匹配用：图像语义查询（caption->text embed）
+            # Scene match: image semantic query (caption->text embed)
             query_image_semantic_emb=query_image_semantic_emb,
-            # 视角图像匹配用：图像查询（直接 ViT image_feat）
+            # View image match: direct ViT image_feat query
             query_image_query_emb=query_image_query_emb,
             kb_scene_semantic_emb=kb_scene_semantic_emb,
             kb_zone_semantic_emb=kb_zone_semantic_emb,
@@ -1032,7 +1032,7 @@ class Retriever:
         t_tk0 = time.perf_counter() if timing else 0.0
         k1 = min(max(1, int(topk1_scenes)), s_cnt)
         k2 = min(max(1, int(topk2_zones)), z_cnt_max * s_cnt)
-        k3 = min(max(1, int(topk3_pairs)), 10_000)  # 组合会再裁剪
+        k3 = min(max(1, int(topk3_pairs)), 10_000)  # pairs may be trimmed further
         k_pair = (
             min(max(1, int(pair_ranking_topk)), 10_000)
             if pair_ranking_topk is not None
@@ -1044,7 +1044,7 @@ class Retriever:
         topk1_scene_idx_list = topk1_scene_idx.tolist()
         _v(f"[retrieve] topk1 scene idx={topk1_scene_idx_list}")
 
-        # topk2 zones：在全场景范围内取（不做场景筛选）
+        # topk2 zones: global across scenes (no scene pre-filter)
         zone_scores_masked = torch.where(
             zone_valid_mask,
             start_zone_scores,
@@ -1055,15 +1055,15 @@ class Retriever:
         topk2_zone_idx = (topk2_flat_idx % z_cnt_max).tolist()
         _v(f"[retrieve] topk2 pairs={list(zip(topk2_scene_idx, topk2_zone_idx))}")
 
-        # 用于 pairs：不做 zone 预筛选，起点直接在所有有效 view 内比较
+        # For pairs: no zone pre-filter; compare starts across all valid views
         zone_sel_mask = zone_valid_mask
         if timing:
             _add("topk_scene_zone", time.perf_counter() - t_tk0)
 
-        # topk3 pairs：枚举 top-starts × top-ends（每个 scene 内），再选全局 topk3
+        # topk3 pairs: enumerate top-starts x top-ends per scene, then global topk3
         pair_candidates: List[Dict[str, Any]] = []
 
-        # 预先准备每个 scene 的 zone_graph adjacency & zone_ids 映射
+        # Precompute per-scene zone_graph adjacency and zone_ids mapping
         scene_zone_adj: List[Optional[torch.Tensor]] = [None for _ in range(s_cnt)]
         scene_zone_ids_order: List[List[str]] = [[] for _ in range(s_cnt)]
         scene_zone_id_to_idx: List[Dict[str, int]] = [{} for _ in range(s_cnt)]
@@ -1083,7 +1083,7 @@ class Retriever:
         if timing:
             _add("view_graph_prep", time.perf_counter() - t_gp0)
 
-        # 从全场景内按 scene 分别枚举对（不做场景预筛选）
+        # Enumerate pairs per scene globally (no scene pre-filter)
         t_pe0 = time.perf_counter() if timing else 0.0
         pair_scene_iter = range(s_cnt)
         if progress and tqdm is not None:
@@ -1094,7 +1094,7 @@ class Retriever:
             adj = scene_zone_adj[s_i]
             _v(f"[retrieve] enumerating pairs in scene_idx={s_i} (scene_id={scene_ids[s_i]!r})")
 
-            # start: 在整个 scene 内的有效 view（不做 zone 预筛选）
+            # start: valid views in the whole scene (no zone pre-filter)
             start_mask = view_valid_mask[s_i] & zone_sel_mask[s_i].view(z_cnt_max, 1)
             start_scores_s = start_view_scores[s_i]  # [Z,V]
             start_masked = torch.where(start_mask, start_scores_s, torch.full_like(start_scores_s, -1e9))
@@ -1107,7 +1107,7 @@ class Retriever:
             _v(f"[retrieve] scene_idx={s_i}: valid_start_count={valid_start_count}, K_start={K_start}")
             top_start_vals, top_start_flat_idx = torch.topk(start_flat, k=K_start, dim=0)
 
-            # end: 在整个 scene 内的有效 view
+            # end: valid views in the whole scene
             end_mask = view_valid_mask[s_i]
             end_scores_s = end_view_scores[s_i]  # [Z,V]
             end_masked = torch.where(end_mask, end_scores_s, torch.full_like(end_scores_s, -1e9))
@@ -1121,7 +1121,7 @@ class Retriever:
             top_end_vals, top_end_flat_idx = torch.topk(end_flat, k=K_end, dim=0)
 
             Vmax = v_cnt_max
-            # 枚举组合
+            # Enumerate start/end combinations
             for sv_val, sv_flat in zip(top_start_vals.tolist(), top_start_flat_idx.tolist()):
                 z_start = int(sv_flat // Vmax)
                 v_start = int(sv_flat % Vmax)
@@ -1173,7 +1173,7 @@ class Retriever:
         if timing:
             _add("pair_enum_dijkstra", time.perf_counter() - t_pe0)
 
-        # topk1 scenes 与 topk2 zones 输出（便于你 debug）
+        # topk1 scenes and topk2 zones output (for debugging)
         t_po0 = time.perf_counter() if timing else 0.0
         topk1_scene_out = [
             {"scene_id": scene_ids[int(i)], "scene_belonging_score": float(v)}
@@ -1213,18 +1213,17 @@ def dijkstra_shortest_path(
     no_edge_value: float = 0.0,
 ) -> List[int]:
     """
-    Dijkstra 最短路（返回路径上的节点索引）。
+    Dijkstra shortest path (returns node indices along the path).
 
     Args:
-        start: 起始节点 index（对应 start view 或区域节点）。
-        end: 终点节点 index。
-        adjacency: 邻接矩阵 [N, N]；adjacency[u][v] 表示 u->v 的边权。
-                    当 adjacency[u][v] <= no_edge_value 时视为无边。
-        no_edge_value: 无边的阈值（默认 0.0）。
+        start: start node index (start view or zone node).
+        end: end node index.
+        adjacency: adjacency matrix [N, N]; adjacency[u][v] is edge weight u->v.
+                   Values <= no_edge_value mean no edge.
+        no_edge_value: threshold for no edge (default 0.0).
 
     Returns:
-        nodes: 节点 index 列表（例如 [start, ..., end]）。
-                若不可达返回空列表。
+        nodes: node index list (e.g. [start, ..., end]); empty if unreachable.
     """
     if start == end:
         return [start]
@@ -1250,7 +1249,7 @@ def dijkstra_shortest_path(
         if u == end:
             break
 
-        # 遍历所有邻接点（邻接矩阵版本）
+        # Visit all neighbors (adjacency-matrix version)
         for v in range(n):
             w = float(adj[u, v].item())
             if v == u or w <= no_edge_value:
@@ -1264,7 +1263,7 @@ def dijkstra_shortest_path(
     if prev[end] is None:
         return []
 
-    # 回溯路径
+    # Backtrack path
     path: List[int] = [end]
     cur = end
     while cur != start:

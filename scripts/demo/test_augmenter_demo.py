@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Retriever + Augmenter Demo（支持增强器切换）。
+Retriever + Augmenter demo (switchable augmenters).
 
-增强器可选：
+Augmenter choices:
 - llm_direct
 - template_path
-- semantic_pathplanning（单次 LLM：证据 CoT → 语义航点 → FSM/VLN 句式）
+- semantic_pathplanning (single LLM: evidence CoT → semantic waypoints → FSM/VLN phrasing)
 """
 
 from __future__ import annotations
@@ -60,11 +60,11 @@ def _cfg_embedding_dim(config_path: Path) -> int:
 
 def _load_robot_image(path: Path) -> Any:
     if not path.is_file():
-        raise SystemExit(f"机器人测试图不存在: {path.resolve()}")
+        raise SystemExit(f"Robot test image not found: {path.resolve()}")
     try:
         from PIL import Image  # type: ignore
     except ImportError as e:
-        raise ImportError("加载图片需要 pillow：pip install pillow") from e
+        raise ImportError("Loading images requires pillow: pip install pillow") from e
     return Image.open(path).convert("RGB")
 
 
@@ -152,7 +152,7 @@ def _lookup_episode_row(gt_csv: Path, episode_id: str) -> Optional[dict[str, str
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Retriever + Instruction Augmenter 对比 Demo")
+    parser = argparse.ArgumentParser(description="Retriever + Instruction Augmenter comparison demo")
     parser.add_argument(
         "--augmenter",
         choices=("llm_direct", "template_path", "semantic_pathplanning"),
@@ -164,17 +164,17 @@ def main() -> None:
         "--config",
         type=Path,
         default=None,
-        help=f"rag4vln 统一配置（含 retrieval / augment），默认 {DEFAULT_RAG4VLN_CONFIG}",
+        help=f"rag4vln unified config (retrieval / augment); default {DEFAULT_RAG4VLN_CONFIG}",
     )
     parser.add_argument(
         "--start-view-image",
         type=Path,
         default=None,
-        help=f"起始视角图片（优先于 --robot-image），例如 {DEFAULT_START_VIEW_IMAGE}",
+        help=f"Start-view image (overrides --robot-image), e.g. {DEFAULT_START_VIEW_IMAGE}",
     )
-    parser.add_argument("--episode-id", type=str, default=None, help="按 episode_id 从 GT CSV 自动读取起始图与指令")
-    parser.add_argument("--gt-csv", type=Path, default=DEFAULT_GT_CSV, help="含 start_view_image_path 的 GT CSV")
-    parser.add_argument("--robot-image", type=Path, default=None, help=f"机器人图像，默认 {DEFAULT_ROBOT_IMAGE}")
+    parser.add_argument("--episode-id", type=str, default=None, help="Load start image and instruction from GT CSV by episode_id")
+    parser.add_argument("--gt-csv", type=Path, default=DEFAULT_GT_CSV, help="GT CSV with start_view_image_path")
+    parser.add_argument("--robot-image", type=Path, default=None, help=f"Robot image (default {DEFAULT_ROBOT_IMAGE})")
     parser.add_argument("--instruction", type=str, default="Represent this sentence for searching relevant passages: I want to watch TV")
     parser.add_argument("--binary-dim", type=int, default=64)
     parser.add_argument("--result-dir", type=Path, default=RAG4VLN_ROOT / "results")
@@ -182,14 +182,14 @@ def main() -> None:
     parser.add_argument(
         "--retrieve-verbose",
         action="store_true",
-        help="打印 Retriever 调试日志（含实际传入 text_embedder 的指令字符串）",
+        help="Print Retriever debug logs (incl. instruction string passed to text_embedder)",
     )
     args = parser.parse_args()
 
     cfg = args.config if args.config is not None else DEFAULT_RAG4VLN_CONFIG
     need_config = args.text_embedder != "binary" or args.vision_embedder == "vit"
     if need_config and not cfg.is_file():
-        raise SystemExit(f"找不到检索 config：{cfg}")
+        raise SystemExit(f"Retrieval config not found: {cfg}")
 
     if args.text_embedder == "binary" and args.vision_embedder == "binary":
         binary_dim = max(1, int(args.binary_dim))
@@ -213,12 +213,12 @@ def main() -> None:
         gt_csv = args.gt_csv if args.gt_csv.is_absolute() else (RAG4VLN_ROOT.parent / args.gt_csv).resolve()
         row = _lookup_episode_row(gt_csv, args.episode_id)
         if row is None:
-            raise SystemExit(f"在 GT CSV 中未找到 episode_id={args.episode_id}: {gt_csv}")
+            raise SystemExit(f"episode_id={args.episode_id} not found in GT CSV: {gt_csv}")
         if row.get("instruction_text"):
             instruction = row["instruction_text"].strip()
         rel = row.get("start_view_image_path", "").strip()
         if not rel:
-            raise SystemExit(f"episode_id={args.episode_id} 缺少 start_view_image_path")
+            raise SystemExit(f"episode_id={args.episode_id} missing start_view_image_path")
         rp = Path(rel)
         robot_path = rp if rp.is_absolute() else (RAG4VLN_ROOT.parent / rp).resolve()
     elif args.start_view_image is not None:

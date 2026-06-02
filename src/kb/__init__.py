@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""打开 KB：``kb.KnowledgeBase``；构建：``kb_build`` 中函数。"""
+"""Open KB via ``kb.KnowledgeBase``; build via functions in ``kb_build``."""
 
 from .kb import (
     DOCUMENTS_FILENAME,

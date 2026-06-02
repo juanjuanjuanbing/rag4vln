@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-导出 KB 中某场景的 view 图片及同名 JSON（view 节点 ``attributes`` 等结构化内容）。
+Export view images and sidecar JSON for a KB scene (view ``attributes``, etc.).
 
-在仓库根目录执行：``python rag4vln/scripts/demo/visualize_kb_views.py``
+Run from repo root: ``python rag4vln/scripts/demo/visualize_kb_views.py``
 """
 
 from __future__ import annotations
@@ -42,8 +42,8 @@ def main() -> None:
     parser.add_argument("--scene-id", type=str, default="Pm6F8kyY3z2")
     parser.add_argument("--kb-root", type=Path, default=RAG4VLN_ROOT / "data" / "kb" / "memory")
     parser.add_argument("--out-dir", type=Path, default=RAG4VLN_ROOT / "results" / "kb_vis")
-    parser.add_argument("--all-views", action="store_true", help="导出该场景全部 view")
-    parser.add_argument("--max-views", type=int, default=8, help="未指定 --all-views 时最多导出数量")
+    parser.add_argument("--all-views", action="store_true", help="Export all views for the scene")
+    parser.add_argument("--max-views", type=int, default=8, help="Max views to export when --all-views is not set")
     args = parser.parse_args()
 
     kb_root = args.kb_root if args.kb_root.is_absolute() else RAG4VLN_ROOT / args.kb_root
@@ -51,7 +51,7 @@ def main() -> None:
     tree = kb.scene(args.scene_id)
     views = tree.get("views") or {}
     if not isinstance(views, dict) or not views:
-        raise SystemExit(f"场景 {args.scene_id!r} 无 views")
+        raise SystemExit(f"Scene {args.scene_id!r} has no views")
 
     out_dir = args.out_dir.expanduser().resolve() / args.scene_id
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-构建 memory KB（逻辑在 ``src.kb.build_knowledgebase_from_memory``）。
-可选 ``--render-view-images`` → ``attach_view_images_to_kb``（Habitat 见 ``src.utils.habitat_render``）。
+Build memory KB (logic in ``src.kb.build_knowledgebase_from_memory``).
+Optional ``--render-view-images`` → ``attach_view_images_to_kb`` (Habitat: ``src.utils.habitat_render``).
 """
 
 import argparse
@@ -65,7 +65,7 @@ def main() -> None:
         else None,
     )
     nsc = len(kb.list_scene_ids())
-    print(f"KB 完成：{out}，场景数={nsc}，检索文档数={kb.num_documents()}")
+    print(f"KB done: {out}, scenes={nsc}, retrieval_docs={kb.num_documents()}")
 
     if args.render_view_images:
         ns, nk = attach_view_images_to_kb(
@@ -75,7 +75,7 @@ def main() -> None:
             height=args.render_height,
             hfov=args.render_hfov,
         )
-        print(f"View 图像：保存 {ns} 张，跳过 {nk}。")
+        print(f"View images: saved {ns}, skipped {nk}.")
 
 
 if __name__ == "__main__":

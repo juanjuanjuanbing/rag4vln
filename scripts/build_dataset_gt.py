@@ -1,33 +1,33 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-为 VLN-CE episode 生成 GT 对齐信息（gt_scene / gt_start_view / gt_end_view）。
+Build GT alignment for VLN-CE episodes (gt_scene / gt_start_view / gt_end_view).
 
-**终点视角（gt_end_view_id）如何定义**
-  1. 在 KB 中取出该场景全部可用 view（含 position、included=True）。
-  2. 用 ``_pick_end_ref(episode)`` 得到 3D 参考点：优先 ``reference_path`` 的**最后一个点**，
-     否则用 ``goals[0].position``；若皆无则退回 ``start_position``。
-  3. ``_nearest_view(views, end_ref)``：在欧氏距离下取 KB 中与该参考点**最近**的 view，作为 GT 终点视角。
+**How gt_end_view_id is defined**
+  1. Collect all usable views in the KB scene (with position, included=True).
+  2. ``_pick_end_ref(episode)`` yields a 3D reference: prefer the **last** point of ``reference_path``,
+     else ``goals[0].position``; if neither exists, fall back to ``start_position``.
+  3. ``_nearest_view(views, end_ref)``: Euclidean-nearest KB view to that reference is GT end view.
 
-默认（评测口径）：只扫描 vln-root 下的 raw_data，且仅 val_seen / val_unseen（排除 train）；
-raw_data 内同一 episode 若出现在多个重复 JSON 中，按 episode_id 只保留一行。
-mask 子目录（raw_data_mask_*）与 raw_data 轨迹编号一致，默认不扫，避免重复。
+Default (eval): scan only ``raw_data`` under vln-root, val_seen / val_unseen only (exclude train);
+duplicate episode_id across JSON files in raw_data → keep one row per episode_id.
+mask dirs (raw_data_mask_*) share episode ids with raw_data; not scanned by default to avoid dupes.
 
-默认输出：
+Default output:
   data/vln_ce/dataset_gt.csv
-在开启渲染时（默认），会同时生成起点与终点 PNG。默认 ``--start-view-subdir-style from_r2r``：
-三套数据（``raw_data`` / ``raw_data_mask_*`` / ``raw_data_implicit``）**共用**同一批图，落在
-``data/vln_ce/start_view/r2r/<split>/ep_<id>.png``，与评测脚本读取规则一致。
-隐式数据需指定扫描目录，例如 ``--vln-subdir raw_data_implicit``（默认只扫 ``raw_data``）。
-仅起点、不渲终点时用 ``--no-render-end-view``；完全不渲图用 ``--no-render-start-view``。
+With rendering on (default), start and end PNGs are written. Default ``--start-view-subdir-style from_r2r``:
+``raw_data`` / ``raw_data_mask_*`` / ``raw_data_implicit`` **share** images at
+``data/vln_ce/start_view/r2r/<split>/ep_<id>.png``, matching eval script layout.
+For implicit data, set scan dir e.g. ``--vln-subdir raw_data_implicit`` (default scans ``raw_data`` only).
+``--no-render-end-view`` for start only; ``--no-render-start-view`` to skip all rendering.
 
-在 InternNav 仓库根目录执行示例：
+Run from InternNav repo root, e.g.:
   python rag4vln/scripts/build_dataset_gt.py
-  python rag4vln/scripts/build_dataset_gt.py --vln-subdir raw_data_implicit   # 隐式指令集
-  python rag4vln/scripts/build_dataset_gt.py --no-render-end-view   # 只渲起点
-  python rag4vln/scripts/build_dataset_gt.py --start-view-subdir-style mirror_vln_ce   # 按 vln_ce 全路径分子目录
-  python rag4vln/scripts/build_dataset_gt.py --start-view-subdir-style mirror_json   # 整段相对仓库
-  python rag4vln/scripts/build_dataset_gt.py --full-vln-ce   # 整棵 vln_ce
+  python rag4vln/scripts/build_dataset_gt.py --vln-subdir raw_data_implicit   # implicit instructions
+  python rag4vln/scripts/build_dataset_gt.py --no-render-end-view   # start views only
+  python rag4vln/scripts/build_dataset_gt.py --start-view-subdir-style mirror_vln_ce
+  python rag4vln/scripts/build_dataset_gt.py --start-view-subdir-style mirror_json
+  python rag4vln/scripts/build_dataset_gt.py --full-vln-ce
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def _split_csv(s: str) -> List[str]:
 def _file_matches_split_filter(
     file_path: Path, scan_root: Path, split_dir_names: List[str], exclude_dir_names: List[str]
 ) -> bool:
-    """路径相对 scan_root 的目录名中需命中任一 split，且不得命中任一 exclude。"""
+    """Path under scan_root must hit at least one split dir name and none of the exclude names."""
     try:
         rel = file_path.relative_to(scan_root)
     except ValueError:
@@ -90,7 +90,7 @@ def _file_matches_split_filter(
 
 
 def _split_tag_from_rel(rel: Path, split_dir_names: List[str]) -> str:
-    """用于去重：同一 episode_id 在 val_seen 与 val_unseen 可能各有一条（指令/起点不同），须分 split 去重。"""
+    """Dedup tag: same episode_id may appear in val_seen and val_unseen (different instruction/start); dedupe per split."""
     for name in split_dir_names:
         if name in rel.parts:
             return name
@@ -205,10 +205,10 @@ def _pick_end_ref(episode: Dict[str, Any]) -> Optional[Tuple[float, float, float
 
 def _image_subdir_under_vln_view_root(rel_file: str, style: str, repo_root: Path) -> Path:
     """
-    在 start_view / end_view 根目录下的相对子目录。
-    - from_r2r（默认）：自 ``r2r`` 起至 JSON 父目录；三套数据集共用 ``start_view/r2r/<split>/``。
-    - mirror_vln_ce：JSON 父目录相对 ``data/vln_ce`` 全路径。
-    - mirror_json：``Path(rel_file).parent`` 整段相对仓库（历史嵌套 data/vln_ce/...）。
+    Relative subdir under start_view / end_view roots.
+    - from_r2r (default): from ``r2r`` to JSON parent; all three dataset variants share ``start_view/r2r/<split>/``.
+    - mirror_vln_ce: JSON parent path relative to ``data/vln_ce``.
+    - mirror_json: full ``Path(rel_file).parent`` relative to repo (legacy nested data/vln_ce/...).
     """
     if style == "mirror_json":
         return Path(rel_file).parent
@@ -228,13 +228,13 @@ def _image_subdir_under_vln_view_root(rel_file: str, style: str, repo_root: Path
 
 
 def _quat_xyzw_yaw_about_y(yaw_rad: float) -> Tuple[float, float, float, float]:
-    """绕 Y 轴旋转（弧度），Habitat 常用 x,y,z,w。"""
+    """Rotation about Y (radians), Habitat-style x,y,z,w quaternion."""
     half = 0.5 * yaw_rad
     return (0.0, math.sin(half), 0.0, math.cos(half))
 
 
 def _end_rotation_xyzw_from_episode(ep: Dict[str, Any]) -> Optional[Tuple[float, float, float, float]]:
-    """终点相机朝向：reference_path 末段在 xz 上前进方向；否则用 start_rotation。"""
+    """End camera orientation: forward on xz from last reference_path segment; else start_rotation."""
     ref_path = ep.get("reference_path")
     if isinstance(ref_path, list) and len(ref_path) >= 2:
         a = _to_xyz(ref_path[-2])
@@ -258,30 +258,30 @@ def main() -> None:
     parser.add_argument(
         "--full-vln-ce",
         action="store_true",
-        help="扫描整个 vln-root（含 raw_data_mask_* 等），不做 split 过滤与 episode 去重",
+        help="Scan entire vln-root (incl. raw_data_mask_*); no split filter or episode dedup",
     )
     parser.add_argument(
         "--vln-subdir",
         type=str,
         default="raw_data",
-        help="默认仅在此子目录下扫描（相对 vln-root）；与 --full-vln-ce 互斥时以 --full-vln-ce 为准",
+        help="Scan only under this subdir of vln-root (default); --full-vln-ce overrides",
     )
     parser.add_argument(
         "--split-dirs",
         type=str,
         default="val_seen,val_unseen",
-        help="仅处理路径目录名命中其中任一项的 JSON（逗号分隔）；默认 val 评测",
+        help="Only JSON whose path contains one of these dir names (comma-separated); default val eval",
     )
     parser.add_argument(
         "--exclude-dirs",
         type=str,
         default="train",
-        help="路径目录名命中其中任一项则跳过（逗号分隔）",
+        help="Skip if path contains any of these dir names (comma-separated)",
     )
     parser.add_argument(
         "--no-dedupe-episode-id",
         action="store_true",
-        help="不去重 episode_id（仅建议在 --full-vln-ce 或确认无重复文件时使用）",
+        help="Do not dedupe episode_id (use with --full-vln-ce or when files are known unique)",
     )
     parser.add_argument("--kb-root", type=Path, default=repo_root / "rag4vln" / "data" / "kb" / "memory")
     parser.add_argument("--output-csv", type=Path, default=repo_root / "data" / "vln_ce" / "dataset_gt.csv")
@@ -290,18 +290,18 @@ def main() -> None:
         "--end-view-root",
         type=Path,
         default=repo_root / "data" / "vln_ce" / "end_view",
-        help="终点视角 PNG 根目录（与起点同时渲染时写入；可用 --no-render-end-view 关闭终点）",
+        help="Root for end-view PNGs (written with start render; disable via --no-render-end-view)",
     )
     parser.add_argument(
         "--start-view-subdir-style",
         choices=("mirror_vln_ce", "from_r2r", "mirror_json"),
         default="from_r2r",
-        help="起点/终点图子目录：from_r2r=r2r/<split> 共用图（默认，与 eval 一致）；mirror_vln_ce / mirror_json 见脚本说明",
+        help="Start/end image subdirs: from_r2r=r2r/<split> shared (default, matches eval); see doc for mirror_*",
     )
     parser.add_argument(
         "--no-render-end-view",
         action="store_true",
-        help="在已开启起点渲染时，跳过终点视角 PNG（默认会渲终点）",
+        help="When start rendering is on, skip end-view PNGs (default renders both)",
     )
     parser.add_argument("--scene-root", type=Path, default=repo_root / "data" / "scene_data" / "mp3d_ce" / "mp3d")
     parser.add_argument("--render-width", type=int, default=640)
@@ -311,7 +311,7 @@ def main() -> None:
         "--camera-height",
         type=float,
         default=KB_AVG_CAMERA_HEIGHT,
-        help="渲染时使用的固定相机高度（米，写入 position[1]）",
+        help="Fixed camera height in meters when rendering (written to position[1])",
     )
     parser.add_argument("--no-render-start-view", action="store_true")
     args = parser.parse_args()
@@ -330,9 +330,9 @@ def main() -> None:
     subdir_style = str(args.start_view_subdir_style)
 
     if not vln_root.is_dir():
-        raise SystemExit(f"VLN 数据目录不存在: {vln_root}")
+        raise SystemExit(f"VLN data directory not found: {vln_root}")
     if not kb_root.is_dir():
-        raise SystemExit(f"KB 目录不存在: {kb_root}")
+        raise SystemExit(f"KB directory not found: {kb_root}")
 
     kb = KnowledgeBase(kb_root)
     if enable_render:
@@ -356,7 +356,7 @@ def main() -> None:
     else:
         scan_root = (vln_root / args.vln_subdir).resolve()
         if not scan_root.is_dir():
-            raise SystemExit(f"扫描子目录不存在: {scan_root}")
+            raise SystemExit(f"Scan subdirectory not found: {scan_root}")
         split_names = _split_csv(args.split_dirs)
         exclude_names = _split_csv(args.exclude_dirs)
         dedupe_episode = not bool(args.no_dedupe_episode_id)
@@ -464,7 +464,7 @@ def main() -> None:
         try:
             data = _load_json(file_path)
         except Exception as e:
-            print(f"[warn] 读取失败，跳过: {file_path} ({e})")
+            print(f"[warn] read failed, skipping: {file_path} ({e})")
             continue
         episodes = data.get("episodes")
         if not isinstance(episodes, list):

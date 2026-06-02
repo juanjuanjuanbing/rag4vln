@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-第三种增强器：语义路径规划（单次 LLM，三阶段 CoT）。
-优先解析 ``<final_instruction>...</final_instruction>``；若模型漏标签或输出被截断，
-则按若干启发式回退提取，避免整条评测流水线中断。
+Augmenter type 3: semantic path planning (single LLM, three-stage CoT).
+Prefer parsing ``<final_instruction>...</final_instruction>``; if tags are missing or output
+is truncated, fall back with heuristics so the eval pipeline does not abort.
 """
 
 from __future__ import annotations
@@ -46,10 +46,10 @@ def _extract_tag(text: str, tag: str) -> str:
 
 def _extract_final_instruction(raw: str) -> tuple[str, str]:
     """
-    从模型回复中提取最终导航指令。
+    Extract the final navigation instruction from the model reply.
 
     Returns:
-        (instruction, source)  source 取值便于 meta 调试：tag | unclosed_tag | heading | tail
+        (instruction, source)  source for meta debugging: tag | unclosed_tag | heading | tail
     """
     t = (raw or "").strip()
     if not t:
@@ -59,7 +59,7 @@ def _extract_final_instruction(raw: str) -> tuple[str, str]:
     if inst:
         return inst, "tag"
 
-    # 仅有开标签、无闭标签（常见于 max_tokens 截断）
+    # Open tag only, no close tag (common when max_tokens truncates)
     m_open = re.search(r"<final_instruction>\s*(.*)", t, re.DOTALL | re.IGNORECASE)
     if m_open:
         s = m_open.group(1).strip()
@@ -68,7 +68,7 @@ def _extract_final_instruction(raw: str) -> tuple[str, str]:
         if s:
             return s, "unclosed_tag"
 
-    # 常见「标题 + 正文」变体（模型未按 XML 输出）
+    # Common "heading + body" variants when the model skips XML
     for pat in (
         r"(?:^|\n)\s*#+\s*final\s*instruction\s*(?:\n+)(.+?)(?=\n\s*#+|\n\s*<|\Z)",
         r"(?:^|\n)\s*\*\*final\s*instruction\*\*\s*(?:\n+)(.+?)(?=\n\s*#+|\n\s*\*\*|\n\s*<|\Z)",
@@ -77,16 +77,16 @@ def _extract_final_instruction(raw: str) -> tuple[str, str]:
         m = re.search(pat, t, re.DOTALL | re.IGNORECASE)
         if m:
             cand = m.group(1).strip()
-            # 取第一段连续非空行作为一句指令
+            # Use first contiguous non-empty lines as one instruction
             first_para = "\n".join(line.strip() for line in cand.splitlines() if line.strip())
             if first_para and len(first_para) >= 8:
                 return first_para.split("\n", 1)[0].strip(), "heading"
 
-    # 弱回退：取全文最后一个非空段落（往往就是最终一句指令）
+    # Weak fallback: last non-empty paragraph (often the final instruction)
     paras = [p.strip() for p in re.split(r"\n{2,}", t) if p.strip()]
     if paras:
         last = paras[-1]
-        # 去掉可能残留的 XML 片段名
+        # Strip leftover XML tag fragments
         last = re.sub(r"</?[^>]+>", "", last).strip()
         if last and len(last) >= 8 and not last.lower().startswith("put reasoning"):
             return last, "tail"
@@ -96,11 +96,11 @@ def _extract_final_instruction(raw: str) -> tuple[str, str]:
 
 def _parse_waypoints_block(block: str) -> Optional[list]:
     """
-    解析 ``<waypoints_json>`` 内 JSON。兼容：
-    - 规范：``{"waypoints":[...]}``
-    - 常见漂移：顶层即为 ``[{...}, ...]`` 数组
-    - 备用键名：``waypoint`` / ``path`` / ``semantic_waypoints`` / ``steps``
-    解析失败返回 ``None``（不中断增强主路径）。
+    Parse JSON inside ``<waypoints_json>``. Supports:
+    - Canonical: ``{"waypoints":[...]}``
+    - Drift: top-level ``[{...}, ...]`` array
+    - Alternate keys: ``waypoint`` / ``path`` / ``semantic_waypoints`` / ``steps``
+    Returns ``None`` on failure (does not abort augmentation).
     """
     s = strip_code_fence(block.strip())
     if not s:
@@ -127,7 +127,7 @@ def _parse_waypoints_block(block: str) -> Optional[list]:
         if isinstance(v, list):
             return v
 
-    # 单对象 waypoint（少见）
+    # Single waypoint object (rare)
     if "kind" in obj or "semantic" in obj:
         return [obj]
 

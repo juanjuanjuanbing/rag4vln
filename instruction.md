@@ -1,4 +1,4 @@
-检索
+Retrieval
 
 python rag4vln/scripts/eval/eval_retriever.py --dataset-json data/vln_ce/raw_data_mask_1/r2r/val_seen/val_seen.json --gt-csv data/vln_ce/dataset_gt.csv --text-embedder bge --vision-embedder vit --topk1 3 --topk2 3 --topk3 10 --hit-k 5 --max-episodes 150 --no-export-images --kb-embed-cache rag4vln/results/cache/kb_embed_bge_vit.pt --subset-name val_seen_mask_1
 

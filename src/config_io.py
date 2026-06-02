@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-统一 YAML：`config.yaml` 内分 `basic` / `retrieval` / `augment`。
-兼容旧版「仅检索」或「仅增强」的扁平单文件（顶层直接是各段字段）。
+Unified YAML: `config.yaml` sections `basic` / `retrieval` / `augment`.
+Also supports legacy flat files with retrieval-only or augment-only top-level fields.
 """
 
 from __future__ import annotations

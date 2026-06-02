@@ -1,34 +1,34 @@
-# rag4vln 统一配置：basic（说明） / retrieval（嵌入、caption、检索系数） / augment（指令增强 LLM）
-# API Key 建议使用环境变量名填入 *api_key_env*，勿将密钥提交仓库（阿里云 DashScope：通常为 DASHSCOPE_API_KEY）。
+# rag4vln unified config: basic (notes) / retrieval (embeddings, caption, scoring) / augment (instruction LLM)
+# Prefer *api_key_env* for API keys; do not commit secrets (Alibaba DashScope: usually DASHSCOPE_API_KEY).
 
 basic:
   description: |
-    统一入口配置。检索与 caption 见 retrieval；多种增强器见 augment（llm / template_llm / semantic_pathplanning）。
-  # 可在此扩展：版本号、实验标签等元数据。
+    Unified entry config. Retrieval and caption under retrieval; augmenters under augment (llm / template_llm / semantic_pathplanning).
+  # Extend here: version tags, experiment labels, etc.
 
 retrieval:
-  # 文本后端：bert=Transformers 均值池化；sentence_bert / sbert；bge=BGE（经 sentence-transformers 加载）
-  # 文本与视觉嵌入统一维度 D（须与所选文本 checkpoint + ViT 一致；下列默认组合均为 768）
+  # Text backends: bert=Transformers mean pooling; sentence_bert / sbert; bge=BGE (via sentence-transformers)
+  # Text and vision embeddings share dimension D (must match text checkpoint + ViT; defaults below are 768)
   text_embedder: bge
 
   embedding_dim: 768
 
-  # 检索混合系数（用于 `Retriever.score_all`）：
-  # - alpha：文本/图像的权重（用于场景匹配 & 起始视角匹配）
-  # - beta ：位置/视角的权重（用于起始与终点视角匹配）
+  # Retrieval mix coefficients (for `Retriever.score_all`):
+  # - alpha: text/image weight (scene match & start-view match)
+  # - beta: position/view weight (start and end view match)
   alpha: 0.4
   beta: 0.4
 
-  # 主路径 `src/retrieval/retriever.py` 与 `retrieval_backup1`：是否对参与混合的视觉/语义余弦做归一化（distance 不归一化）
-  # 主路径若 YAML 中不写此项，则默认关闭（与历史行为一致）。方式由 score_norm_mode 指定。
+  # Main path `src/retrieval/retriever.py`: normalize visual/semantic cosines used in the mix (not distance)
+  # If omitted in YAML, default is off (legacy behavior). Mode set by score_norm_mode.
   normalize_visual_semantic_scores: false
   score_norm_mode: minmax   # none | minmax | zscore
   score_norm_eps: 1.0e-6
 
-  # 消融：为 true 时起点/终点「视角匹配」项不乘 scene_belonging_score（start_zone 仍乘场景分）
+  # Ablation: if true, start/end view match terms skip scene_belonging_score (start_zone still uses scene score)
   no_scene_gate_on_view_scores: false
 
-  # BGE：仅对用户指令做嵌入时加此前缀（与 BAAI 检索 query 推荐一致）；caption 不加。设 "" 关闭
+  # BGE: prefix only for user instruction embedding (BAAI retrieval query style); not for caption. Set "" to disable
   bge_query_prefix: "Represent this sentence for searching relevant passages: "
 
   bert:
@@ -69,7 +69,7 @@ retrieval:
     on_error: "raise"
 
 augment:
-  # Type 1: 单次 LLM 直接扩写指令
+  # Type 1: single LLM call to expand the instruction
   llm:
     enabled: true
     api_key_env: DASHSCOPE_API_KEY
@@ -116,7 +116,7 @@ augment:
 
       Output the final navigation instruction (one sentence).
 
-  # Type 2: LLM 填槽 + 本地 instruction_template 拼接
+  # Type 2: LLM slot filling + local instruction_template stitching
   template_llm:
     enabled: true
     api_key_env: DASHSCOPE_API_KEY
@@ -157,7 +157,7 @@ augment:
       4) goal_target_summary: specific target inside destination area (e.g., 'next to the TV', 'by the sofa').
       5) Keep grounded to given evidence; no hallucination.
 
-  # Type 3: 语义路径规划 — 单次 LLM，三阶段 CoT；未单独配置的 API 字段从 llm 段合并。
+  # Type 3: semantic path planning — single LLM, three-stage CoT; API fields not set here inherit from llm
   semantic_pathplanning:
     enabled: true
     max_tokens: 2048

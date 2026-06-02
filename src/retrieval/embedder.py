@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-检索嵌入：`Embedder` 及实现。
+Retrieval embeddings: ``Embedder`` and implementations.
 
-- **BERTEmbedder**：`transformers` BERT 类模型，掩码均值池化 + L2（仅 `text_emb`）。
-- **SentenceBERTEmbedder** / **BGEEmbedder**：`sentence_transformers` 句向量（SBERT、BGE 等）。
-- **build_text_embedder_from_config**：按统一 `src/config.yaml` 中 `retrieval.text_embedder` 或显式 `backend` 选择上述之一。
-- **ViTEmbedder**：仅填充 `image_feat`（知识库 view 图）。
+- **BERTEmbedder**: ``transformers`` BERT-style model, masked mean pooling + L2 (``text_emb`` only).
+- **SentenceBERTEmbedder** / **BGEEmbedder**: ``sentence_transformers`` sentence vectors (SBERT, BGE, etc.).
+- **build_text_embedder_from_config**: pick one of the above via ``retrieval.text_embedder`` or explicit ``backend`` in ``src/config.yaml``.
+- **ViTEmbedder**: fills ``image_feat`` only (KB view images).
 """
 
 from __future__ import annotations
@@ -34,14 +34,14 @@ def _load_embedder_config(path: Path) -> Dict[str, Any]:
 
 
 class Embedder(ABC):
-    """嵌入器接口：文本 → `text_emb`，图像 → `image_feat`，维度须与 `score_all` 一致。"""
+    """Embedder API: text → ``text_emb``, image → ``image_feat``; dimension must match ``score_all``."""
 
     version: str = "embedder-stub-v0"
 
     @property
     @abstractmethod
     def embedding_dim(self) -> int:
-        """输出向量维度 D（文本与视觉在检索中须一致）。"""
+        """Output embedding dimension D (text and vision must match in retrieval)."""
         raise NotImplementedError
 
     @abstractmethod
@@ -55,16 +55,16 @@ class Embedder(ABC):
         image_role: str = "kb_view",
     ) -> Dict[str, Any]:
         """
-        - `text_emb`：有非空 `instruction` 时由文本编码器写入。
-        - `image_feat`：有 `image` 时由视觉编码器写入（`image_role` 一般为 `kb_view`）。
+        - ``text_emb``: written by the text encoder when ``instruction`` is non-empty.
+        - ``image_feat``: written by the vision encoder when ``image`` is set (``image_role`` usually ``kb_view``).
 
-        `position` / `rotation` 预留给后续几何通道，默认忽略。
+        ``position`` / ``rotation`` reserved for future geometry channels; ignored by default.
         """
         raise NotImplementedError
 
 
 class BinaryRandomEmbedder(Embedder):
-    """测试用：确定性随机 0/1 向量；可同时模拟文本与图像分支。"""
+    """For testing: deterministic random 0/1 vectors; can simulate both text and image branches."""
 
     version: str = "binary-random-embedder-v0"
 
@@ -124,7 +124,7 @@ class BinaryRandomEmbedder(Embedder):
 
 
 class BERTEmbedder(Embedder):
-    """原生 BERT（或兼容的 `AutoModel`）：`last_hidden_state` 掩码均值池化 + L2，仅输出 `text_emb`。"""
+    """Native BERT (or compatible ``AutoModel``): masked mean pool on ``last_hidden_state`` + L2; ``text_emb`` only."""
 
     version: str = "bert-mean-pool-v0"
 
@@ -201,7 +201,7 @@ class BERTEmbedder(Embedder):
 
 
 class STBackedTextEmbedder(Embedder):
-    """经 `sentence_transformers.SentenceTransformer` 加载的句向量（SBERT、BGE 等）。"""
+    """Sentence vectors via ``sentence_transformers.SentenceTransformer`` (SBERT, BGE, etc.)."""
 
     _cfg_key: str = "sentence_bert"
     _default_model: str = "sentence-transformers/all-mpnet-base-v2"
@@ -271,7 +271,7 @@ class STBackedTextEmbedder(Embedder):
 
 
 class SentenceBERTEmbedder(STBackedTextEmbedder):
-    """Sentence-BERT：读取 `config` 中 `sentence_bert.pretrained`。"""
+    """Sentence-BERT: reads ``sentence_bert.pretrained`` from config."""
 
     _cfg_key = "sentence_bert"
     _default_model = "sentence-transformers/all-mpnet-base-v2"
@@ -279,7 +279,7 @@ class SentenceBERTEmbedder(STBackedTextEmbedder):
 
 
 class BGEEmbedder(STBackedTextEmbedder):
-    """BGE：读取 `config` 中 `bge.pretrained`（与 SBERT 相同加载方式，换 checkpoint）。"""
+    """BGE: reads ``bge.pretrained`` from config (same loader as SBERT, different checkpoint)."""
 
     _cfg_key = "bge"
     _default_model = "BAAI/bge-base-en-v1.5"
@@ -300,9 +300,9 @@ def build_text_embedder_from_config(
     device: Optional[str] = None,
 ) -> Embedder:
     """
-    按 YAML 的 `text_embedder`（或显式 `backend`）构造文本 `Embedder`。
+    Build a text ``Embedder`` from YAML ``text_embedder`` (or explicit ``backend``).
 
-    `backend` / `text_embedder` 取值：`bert` | `sentence_bert` | `bge`（别名 `sbert`、`st` → sentence_bert）。
+    ``backend`` / ``text_embedder``: ``bert`` | ``sentence_bert`` | ``bge`` (aliases ``sbert``, ``st`` → sentence_bert).
     """
     cfg_path = Path(config_path) if config_path is not None else default_config_path()
     if not cfg_path.is_file():
@@ -324,7 +324,7 @@ def build_text_embedder_from_config(
 
 
 class ViTEmbedder(Embedder):
-    """ViT：仅根据 `image` 输出 `image_feat`（忽略 `instruction`）。"""
+    """ViT: outputs ``image_feat`` from ``image`` only (ignores ``instruction``)."""
 
     version: str = "vit-embedder-v0"
 

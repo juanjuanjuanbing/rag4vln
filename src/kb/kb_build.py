@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-从外部数据构造 KB 目录。当前：``build_knowledgebase_from_memory``；
-后续可扩展：从轨迹构建等。
+Build a KB directory from external data. Currently: ``build_knowledgebase_from_memory``;
+future: trajectory-based builds, etc.
 
-每个 connectivity 节点（``image_id``）在 KB 中只对应 **一条** view：仅采用
-``mp3d_view_annotation`` 里该节点的 **第一条** 标注（viewpoint）；不再为同一
-``image_id`` 展开多条随机 view_id。``attach_view_images_to_kb`` 按 view 条目逐张渲染。
+Each connectivity node (``image_id``) maps to **one** view in the KB: only the **first**
+annotation (viewpoint) in ``mp3d_view_annotation`` for that node; no multiple random
+view_ids per ``image_id``. ``attach_view_images_to_kb`` renders one image per view entry.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from .kb import (
 )
 
 # ---------------------------------------------------------------------------
-# manifest 与空目录
+# manifest and empty dirs
 # ---------------------------------------------------------------------------
 
 
@@ -121,7 +121,7 @@ def create_kb_folder(
 
 
 # ---------------------------------------------------------------------------
-# 构建入口
+# build entry points
 # ---------------------------------------------------------------------------
 
 
@@ -155,7 +155,7 @@ def build_knowledgebase_from_memory(
     scene_ids: List[str] = []
     documents: List[Dict[str, Any]] = []
 
-    for jpath in tqdm(json_paths, desc="构建 KB 场景", unit="file"):
+    for jpath in tqdm(json_paths, desc="Building KB scenes", unit="file"):
         scene_id = jpath.stem.replace("_connectivity", "").strip()
         try:
             connectivity = load_json(jpath)
@@ -208,7 +208,7 @@ def attach_view_images_to_kb(
     try:
         from PIL import Image
     except ImportError as e:
-        raise RuntimeError("需要 PIL：pip install pillow") from e
+        raise RuntimeError("PIL required: pip install pillow") from e
     from ..utils.habitat_render import make_mp3d_sim, render_rgb_at_pose
 
     scene_root = Path(scene_root)
@@ -216,7 +216,7 @@ def attach_view_images_to_kb(
     saved = 0
     skipped = 0
 
-    for scene_id in tqdm(ids, desc="渲染 view 图像", unit="scene"):
+    for scene_id in tqdm(ids, desc="Rendering view images", unit="scene"):
         spath = scene_json_path(kb.root, scene_id)
         if not spath.is_file():
             continue
@@ -224,7 +224,7 @@ def attach_view_images_to_kb(
         if not glb.is_file():
             skipped += 1
             if verbose_skip_glb:
-                print(f"[render] 跳过场景 {scene_id}：未找到 {glb}")
+                print(f"[render] skip scene {scene_id}: GLB not found at {glb}")
             continue
 
         data = load_json(spath)
@@ -266,7 +266,7 @@ def attach_view_images_to_kb(
     return saved, skipped
 
 
-# --- 内部：树构建 ---
+# --- internal: tree build ---
 
 
 def _safe_load_dict(path: Optional[Union[str, Path]]) -> Optional[Dict[str, Any]]:
@@ -370,7 +370,7 @@ def _build_zones(
             "id": zid,
             "attributes": {
                 "description": text,
-                # 展开后将回填新的随机 view_id 列表
+                # after expansion, backfill the new random view_id list
                 "view_ids": [],
                 "scene_id": scene_id,
                 "adjacent_zone_ids": neighbors,
@@ -529,7 +529,7 @@ def _pose_from_view_attrs(attrs: Dict[str, Any]):
     if not (isinstance(pos, list) and len(pos) == 3):
         return None, None, None
     position = np.array([float(pos[0]), float(pos[1]), float(pos[2])], dtype=np.float32)
-    # 扁平化后每个新 view_id 理应只有一个 rotation；为兼容旧数据，列表嵌套时取第一个
+    # after flattening each view_id should have one rotation; for legacy nested lists, take the first
     if isinstance(rot, list) and rot and isinstance(rot[0], list):
         rot = rot[0]
     if not (isinstance(rot, list) and len(rot) == 4):

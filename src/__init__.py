@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-rag4vln.src: RAG for VLN 核心代码包。
+rag4vln.src: core RAG-for-VLN package.
 """
 
 from .kb import KnowledgeBase
